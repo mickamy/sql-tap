@@ -1,38 +1,37 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 )
 
 var version = "dev"
 
-const usage = `sql-tap — Watch SQL traffic in real-time
-
-Usage:
-  sql-tap <addr>                    Monitor SQL traffic
-  sql-tap version                   Show version
-  sql-tap help                      Show this help
-`
-
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
+	fs := flag.NewFlagSet("sql-tap", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "sql-tap — Watch SQL traffic in real-time\n\nUsage:\n  sql-tap [flags] <addr>\n\nFlags:\n")
+		fs.PrintDefaults()
+	}
+
+	showVersion := fs.Bool("version", false, "show version and exit")
+
+	_ = fs.Parse(os.Args[1:])
+
+	if *showVersion {
+		fmt.Printf("sql-tap %s\n", version)
+		return
+	}
+
+	if fs.NArg() < 1 {
+		fs.Usage()
 		os.Exit(1)
 	}
 
-	switch os.Args[1] {
-	case "version", "--version", "-v":
-		fmt.Printf("sql-tap %s\n", version)
-		return
-	case "help", "--help", "-h":
-		fmt.Fprint(os.Stderr, usage)
-		return
-	}
-
-	monitor(os.Args[1], os.Args[2:])
+	monitor(fs.Arg(0))
 }
 
-func monitor(addr string, args []string) {
+func monitor(addr string) {
 	fmt.Fprintf(os.Stdout, "not implemented yet\n")
 }
