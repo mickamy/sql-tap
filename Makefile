@@ -1,35 +1,39 @@
-APP_NAME = sql-tap
 BUILD_DIR = bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS = -ldflags "-X main.version=$(VERSION)"
-CMD_DIR = ./
 
-.PHONY: all build install uninstall clean test lint
+.PHONY: all build build-tap build-tapd install uninstall clean test lint
 
 all: build
 
-build:
-	@echo "Building $(APP_NAME)..."
-	go build $(LDFLAGS) -o bin/$(APP_NAME) $(CMD_DIR)
+build: build-tap build-tapd
+
+build-tap:
+	@echo "Building sql-tap..."
+	go build $(LDFLAGS) -o $(BUILD_DIR)/sql-tap .
+
+build-tapd:
+	@echo "Building sql-tapd..."
+	go build $(LDFLAGS) -o $(BUILD_DIR)/sql-tapd ./cmd/sql-tapd
 
 install:
-	@echo "Installing $(APP_NAME)..."
+	@echo "Installing sql-tap and sql-tapd..."
 	@bin_dir=$$(go env GOBIN); \
 	if [ -z "$$bin_dir" ]; then \
 		bin_dir=$$(go env GOPATH)/bin; \
 	fi; \
 	mkdir -p "$$bin_dir"; \
-	echo "Installing to $$bin_dir/$(APP_NAME)"; \
-	go build $(LDFLAGS) -o "$$bin_dir/$(APP_NAME)" $(CMD_DIR)
+	echo "Installing to $$bin_dir"; \
+	go build $(LDFLAGS) -o "$$bin_dir/sql-tap" .; \
+	go build $(LDFLAGS) -o "$$bin_dir/sql-tapd" ./cmd/sql-tapd
 
 uninstall:
-	@echo "Uninstalling $(APP_NAME)..."
+	@echo "Uninstalling sql-tap and sql-tapd..."
 	@bin_dir=$$(go env GOBIN); \
 	if [ -z "$$bin_dir" ]; then \
 		bin_dir=$$(go env GOPATH)/bin; \
 	fi; \
-	echo "Removing $$bin_dir/$(APP_NAME)"; \
-	rm -f "$$bin_dir/$(APP_NAME)"
+	rm -f "$$bin_dir/sql-tap" "$$bin_dir/sql-tapd"
 
 clean:
 	@echo "Cleaning up..."
@@ -40,7 +44,7 @@ test:
 
 lint:
 	@command -v golangci-lint >/dev/null 2>&1 || { \
-		@echo "golangci-lint is not installed"; \
+		echo "golangci-lint is not installed"; \
 		exit 1; \
 	}
 	golangci-lint run
