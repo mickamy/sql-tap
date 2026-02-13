@@ -30,7 +30,7 @@ func DetectDriver(dsn string) (string, error) {
 		return "pgx", nil
 	}
 
-	return "", fmt.Errorf("cannot detect driver from DSN: %s", dsn)
+	return "", fmt.Errorf("explain: cannot detect driver from DSN: %s", dsn)
 }
 
 // Mode selects between EXPLAIN and EXPLAIN ANALYZE.
@@ -87,7 +87,7 @@ func (c *Client) Run(ctx context.Context, mode Mode, query string, args []string
 	start := time.Now()
 	rows, err := c.db.QueryContext(ctx, mode.prefix()+query, anyArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("query: %w", err)
+		return nil, fmt.Errorf("explain: query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -95,12 +95,12 @@ func (c *Client) Run(ctx context.Context, mode Mode, query string, args []string
 	for rows.Next() {
 		var line string
 		if err := rows.Scan(&line); err != nil {
-			return nil, fmt.Errorf("scan: %w", err)
+			return nil, fmt.Errorf("explain: scan: %w", err)
 		}
 		lines = append(lines, line)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows: %w", err)
+		return nil, fmt.Errorf("explain: rows: %w", err)
 	}
 
 	return &Result{
@@ -112,7 +112,7 @@ func (c *Client) Run(ctx context.Context, mode Mode, query string, args []string
 // Close closes the underlying database connection.
 func (c *Client) Close() error {
 	if err := c.db.Close(); err != nil {
-		return fmt.Errorf("close: %w", err)
+		return fmt.Errorf("explain: close: %w", err)
 	}
 	return nil
 }

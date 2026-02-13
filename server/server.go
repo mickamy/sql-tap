@@ -36,7 +36,7 @@ func New(b *broker.Broker, explainClient *explain.Client) *Server {
 // Serve starts the gRPC server on the given listener.
 func (s *Server) Serve(lis net.Listener) error {
 	if err := s.grpcServer.Serve(lis); err != nil {
-		return fmt.Errorf("grpc serve: %w", err)
+		return fmt.Errorf("server: serve: %w", err)
 	}
 	return nil
 }
@@ -66,7 +66,7 @@ func (s *tapService) Watch(_ *tapv1.WatchRequest, stream grpc.ServerStreamingSer
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("watch stream: %w", ctx.Err())
+			return fmt.Errorf("server: watch: %w", ctx.Err())
 		case ev, ok := <-ch:
 			if !ok {
 				return nil
@@ -74,7 +74,7 @@ func (s *tapService) Watch(_ *tapv1.WatchRequest, stream grpc.ServerStreamingSer
 			if err := stream.Send(&tapv1.WatchResponse{
 				Event: eventToProto(ev),
 			}); err != nil {
-				return fmt.Errorf("watch stream send: %w", err)
+				return fmt.Errorf("server: watch send: %w", err)
 			}
 		}
 	}
