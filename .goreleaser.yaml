@@ -1,0 +1,49 @@
+version: 2
+
+builds:
+  - id: sql-tap
+    main: .
+    binary: sql-tap
+    ldflags:
+      - -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+  - id: sql-tapd
+    main: ./cmd/sql-tapd
+    binary: sql-tapd
+    ldflags:
+      - -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - ids:
+      - sql-tap
+      - sql-tapd
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+homebrew_casks:
+  - name: sql-tap
+    homepage: https://github.com/mickamy/sql-tap
+    description: Watch SQL traffic in real-time with a TUI
+    binaries:
+      - sql-tap
+      - sql-tapd
+    repository:
+      owner: mickamy
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+
+changelog:
+  sort: asc
