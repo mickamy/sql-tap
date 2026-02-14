@@ -436,7 +436,7 @@ func parseRowsAffected(tag string) int64 {
 }
 
 func isClosedErr(err error) bool {
-	if errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 	var netErr *net.OpError

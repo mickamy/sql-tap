@@ -740,7 +740,7 @@ func (c *conn) emitEvent(ev proxy.Event) {
 }
 
 func isClosedErr(err error) bool {
-	if errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 	var netErr *net.OpError
