@@ -15,6 +15,9 @@ import (
 
 const dsn = "postgres://postgres:postgres@localhost:5433/db?sslmode=disable"
 
+const upsertUser = "INSERT INTO users (name, email) VALUES ($1, $2)" +
+	" ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name"
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
@@ -58,7 +61,7 @@ func run() error {
 func doQueries(ctx context.Context, db *sql.DB, i int) {
 	name := fmt.Sprintf("user-%d", i)
 
-	_, err := db.ExecContext(ctx, "INSERT INTO users (name, email) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name", name, name+"@example.com")
+	_, err := db.ExecContext(ctx, upsertUser, name, name+"@example.com")
 	if err != nil {
 		log.Printf("insert: %v", err)
 		return
@@ -101,7 +104,7 @@ func doTransaction(ctx context.Context, db *sql.DB, i int) {
 
 	name := fmt.Sprintf("tx-user-%d", i)
 	email := name + "@example.com"
-	if _, err := tx.ExecContext(ctx, "INSERT INTO users (name, email) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name", name, email); err != nil {
+	if _, err := tx.ExecContext(ctx, upsertUser, name, email); err != nil {
 		log.Printf("tx insert: %v", err)
 		return
 	}
@@ -129,7 +132,7 @@ func doRollback(ctx context.Context, db *sql.DB, i int) {
 
 	name := fmt.Sprintf("rollback-user-%d", i)
 	email := name + "@example.com"
-	if _, err := tx.ExecContext(ctx, "INSERT INTO users (name, email) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name", name, email); err != nil {
+	if _, err := tx.ExecContext(ctx, upsertUser, name, email); err != nil {
 		log.Printf("rollback insert: %v", err)
 		_ = tx.Rollback()
 		return
@@ -155,7 +158,7 @@ func doConcurrentTransactions(ctx context.Context, db *sql.DB, i int) {
 
 			name := fmt.Sprintf("concurrent-%d-%d", i, g)
 			email := name + "@example.com"
-			_, _ = tx.ExecContext(ctx, "INSERT INTO users (name, email) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name", name, email)
+			_, _ = tx.ExecContext(ctx, upsertUser, name, email)
 			_ = tx.Commit()
 		})
 	}
