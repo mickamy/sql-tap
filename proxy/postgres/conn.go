@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,11 +37,13 @@ type conn struct {
 	lastParse     string            // query from most recent Parse
 	lastBindArgs  []string          // args from most recent Bind
 	lastBindStmt  string            // stmt name from most recent Bind
-	executeStart  time.Time         // when Execute started
 
 	// Transaction tracking.
 	activeTxID string
 	nextID     uint64
+
+	mu      sync.Mutex   // protects pending
+	pending *proxy.Event // event waiting for upstream response
 }
 
 func newConn(clientConn, upstreamConn net.Conn, events chan<- proxy.Event) *conn {
@@ -287,7 +290,9 @@ func (c *conn) handleSimpleQuery(m *pgproto.Query) {
 		StartTime: time.Now(),
 		TxID:      r.txID,
 	}
-	c.emitEvent(ev)
+	c.mu.Lock()
+	c.pending = &ev
+	c.mu.Unlock()
 }
 
 func (c *conn) handleParse(m *pgproto.Parse) {
@@ -314,26 +319,44 @@ func (c *conn) handleExecute() {
 	}
 
 	r := c.detectTx(q, proxy.OpExecute)
-	c.executeStart = time.Now()
 
 	ev := proxy.Event{
 		ID:        c.generateID(),
 		Op:        r.op,
 		Query:     q,
 		Args:      c.lastBindArgs,
-		StartTime: c.executeStart,
+		StartTime: time.Now(),
 		TxID:      r.txID,
 	}
-	c.emitEvent(ev)
+	c.mu.Lock()
+	c.pending = &ev
+	c.mu.Unlock()
 }
 
 func (c *conn) handleCommandComplete(m *pgproto.CommandComplete) {
-	rows := parseRowsAffected(string(m.CommandTag))
-	_ = rows // rows info is available but we already emitted the event at request time
+	c.mu.Lock()
+	ev := c.pending
+	c.pending = nil
+	c.mu.Unlock()
+	if ev == nil {
+		return
+	}
+	ev.Duration = time.Since(ev.StartTime)
+	ev.RowsAffected = parseRowsAffected(string(m.CommandTag))
+	c.emitEvent(*ev)
 }
 
 func (c *conn) handleErrorResponse(m *pgproto.ErrorResponse) {
-	_ = m // error info is available but we already emitted the event at request time
+	c.mu.Lock()
+	ev := c.pending
+	c.pending = nil
+	c.mu.Unlock()
+	if ev == nil {
+		return
+	}
+	ev.Duration = time.Since(ev.StartTime)
+	ev.Error = m.Message
+	c.emitEvent(*ev)
 }
 
 type txDetectResult struct {
