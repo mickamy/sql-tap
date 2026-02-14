@@ -306,8 +306,41 @@ func (c *conn) handleBind(m *pgproto.Bind) {
 	c.lastBindStmt = m.PreparedStatement
 	c.lastBindArgs = make([]string, len(m.Parameters))
 	for i, p := range m.Parameters {
-		c.lastBindArgs[i] = string(p)
+		if isBinaryFormat(m.ParameterFormatCodes, i) {
+			c.lastBindArgs[i] = decodeBinaryParam(p)
+		} else {
+			c.lastBindArgs[i] = string(p)
+		}
 	}
+}
+
+// isBinaryFormat returns true if the i-th parameter uses binary format.
+// Per the PostgreSQL protocol, if there is one format code it applies to all parameters.
+func isBinaryFormat(codes []int16, i int) bool {
+	switch {
+	case len(codes) == 0:
+		return false
+	case len(codes) == 1:
+		return codes[0] == 1
+	}
+	return i < len(codes) && codes[i] == 1
+}
+
+// decodeBinaryParam attempts to decode a binary-format parameter into a readable string.
+// Without type OID information, we use the byte length as a heuristic for common integer types.
+func decodeBinaryParam(p []byte) string {
+	switch len(p) {
+	case 1:
+		// bool or int8
+		return strconv.Itoa(int(int8(p[0])))
+	case 2:
+		return strconv.Itoa(int(int16(binary.BigEndian.Uint16(p)))) //nolint:gosec // interpreting as signed int16
+	case 4:
+		return strconv.FormatInt(int64(int32(binary.BigEndian.Uint32(p))), 10) //nolint:gosec // interpreting as signed int32
+	case 8:
+		return strconv.FormatInt(int64(binary.BigEndian.Uint64(p)), 10) //nolint:gosec // interpreting as signed int64
+	}
+	return string(p)
 }
 
 func (c *conn) handleExecute() {
