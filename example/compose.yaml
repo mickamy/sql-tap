@@ -42,6 +42,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/db?sslmode=disable
     command:
+      - --driver=postgres
       - --listen=:5433
       - --upstream=postgres:5432
       - --grpc=:9091

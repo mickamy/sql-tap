@@ -32,9 +32,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nEnvironment:\n  DATABASE_URL    DSN for EXPLAIN queries (read by default via -dsn-env)\n")
 	}
 
-	driver := fs.String("driver", "postgres", "database driver: postgres, mysql")
-	listen := fs.String("listen", ":5433", "client listen address")
-	upstream := fs.String("upstream", "localhost:5432", "upstream database address")
+	driver := fs.String("driver", "", "database driver: postgres, mysql (required)")
+	listen := fs.String("listen", "", "client listen address (required)")
+	upstream := fs.String("upstream", "", "upstream database address (required)")
 	grpcAddr := fs.String("grpc", ":9091", "gRPC server address for TUI")
 	dsnEnv := fs.String("dsn-env", "DATABASE_URL", "environment variable holding DSN for EXPLAIN")
 	showVersion := fs.Bool("version", false, "show version and exit")
@@ -44,6 +44,11 @@ func main() {
 	if *showVersion {
 		fmt.Printf("sql-tapd %s\n", version)
 		return
+	}
+
+	if *driver == "" || *listen == "" || *upstream == "" {
+		fs.Usage()
+		os.Exit(1)
 	}
 
 	if err := run(*driver, *listen, *upstream, *grpcAddr, *dsnEnv); err != nil {
