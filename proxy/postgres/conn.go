@@ -278,14 +278,14 @@ func (c *conn) captureUpstreamMsg(msg pgproto.BackendMessage) {
 
 func (c *conn) handleSimpleQuery(m *pgproto.Query) {
 	q := m.String
-	c.detectTx(q)
+	r := c.detectTx(q, proxy.OpQuery)
 
 	ev := proxy.Event{
 		ID:        c.generateID(),
-		Op:        proxy.OpQuery,
+		Op:        r.op,
 		Query:     q,
 		StartTime: time.Now(),
-		TxID:      c.activeTxID,
+		TxID:      r.txID,
 	}
 	c.emitEvent(ev)
 }
@@ -313,16 +313,16 @@ func (c *conn) handleExecute() {
 		}
 	}
 
-	c.detectTx(q)
+	r := c.detectTx(q, proxy.OpExecute)
 	c.executeStart = time.Now()
 
 	ev := proxy.Event{
 		ID:        c.generateID(),
-		Op:        proxy.OpExecute,
+		Op:        r.op,
 		Query:     q,
 		Args:      c.lastBindArgs,
 		StartTime: c.executeStart,
-		TxID:      c.activeTxID,
+		TxID:      r.txID,
 	}
 	c.emitEvent(ev)
 }
@@ -336,14 +336,28 @@ func (c *conn) handleErrorResponse(m *pgproto.ErrorResponse) {
 	_ = m // error info is available but we already emitted the event at request time
 }
 
-func (c *conn) detectTx(query string) {
+type txDetectResult struct {
+	txID string
+	op   proxy.Op // overridden Op for BEGIN/COMMIT/ROLLBACK; zero means keep original
+}
+
+// detectTx updates transaction state and returns the txID and Op to use for the current event.
+func (c *conn) detectTx(query string, defaultOp proxy.Op) txDetectResult {
 	upper := strings.ToUpper(strings.TrimSpace(query))
 	switch {
 	case strings.HasPrefix(upper, "BEGIN"):
 		c.activeTxID = uuid.New().String()
-	case strings.HasPrefix(upper, "COMMIT"), strings.HasPrefix(upper, "ROLLBACK"):
+		return txDetectResult{txID: c.activeTxID, op: proxy.OpBegin}
+	case strings.HasPrefix(upper, "COMMIT"):
+		prev := c.activeTxID
 		c.activeTxID = ""
+		return txDetectResult{txID: prev, op: proxy.OpCommit}
+	case strings.HasPrefix(upper, "ROLLBACK"):
+		prev := c.activeTxID
+		c.activeTxID = ""
+		return txDetectResult{txID: prev, op: proxy.OpRollback}
 	}
+	return txDetectResult{txID: c.activeTxID, op: defaultOp}
 }
 
 func (c *conn) emitEvent(ev proxy.Event) {
