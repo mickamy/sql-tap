@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -17,6 +18,30 @@ import (
 
 	"github.com/mickamy/sql-tap/proxy"
 )
+
+// MySQL binary protocol field types.
+const (
+	mysqlTypeTiny       byte = 0x01
+	mysqlTypeShort      byte = 0x02
+	mysqlTypeLong       byte = 0x03
+	mysqlTypeFloat      byte = 0x04
+	mysqlTypeDouble     byte = 0x05
+	mysqlTypeNull       byte = 0x06
+	mysqlTypeLongLong   byte = 0x08
+	mysqlTypeInt24      byte = 0x09
+	mysqlTypeYear       byte = 0x0d
+	mysqlTypeVarchar    byte = 0x0f
+	mysqlTypeBlob       byte = 0xfc
+	mysqlTypeVarString  byte = 0xfd
+	mysqlTypeString     byte = 0xfe
+	mysqlTypeNewDecimal byte = 0xf6
+)
+
+// preparedStmt holds the query and parameter count for a prepared statement.
+type preparedStmt struct {
+	query     string
+	numParams int
+}
 
 // MySQL command bytes.
 const (
@@ -56,7 +81,7 @@ type conn struct {
 	upstreamConn net.Conn
 	events       chan<- proxy.Event
 
-	preparedStmts map[uint32]string // stmt ID -> query
+	preparedStmts map[uint32]preparedStmt
 	lastCommand   byte
 	lastQuery     string
 	lastStmtID    uint32
@@ -76,7 +101,7 @@ func newConn(clientConn, upstreamConn net.Conn, events chan<- proxy.Event) *conn
 		clientConn:    clientConn,
 		upstreamConn:  upstreamConn,
 		events:        events,
-		preparedStmts: make(map[uint32]string),
+		preparedStmts: make(map[uint32]preparedStmt),
 	}
 }
 
@@ -375,14 +400,17 @@ func (c *conn) captureClientPacket(pkt []byte) {
 		if len(payload) >= 5 {
 			stmtID := binary.LittleEndian.Uint32(payload[1:5])
 			c.lastStmtID = stmtID
-			q := c.preparedStmts[stmtID]
-			c.lastQuery = q
+			stmt := c.preparedStmts[stmtID]
+			c.lastQuery = stmt.query
 
-			r := c.detectTx(q, proxy.OpExecute)
+			args := parseStmtExecuteArgs(payload, stmt.numParams)
+
+			r := c.detectTx(stmt.query, proxy.OpExecute)
 			ev := proxy.Event{
 				ID:        c.generateID(),
 				Op:        r.op,
-				Query:     q,
+				Query:     stmt.query,
+				Args:      args,
 				StartTime: time.Now(),
 				TxID:      r.txID,
 			}
@@ -466,7 +494,7 @@ func (c *conn) handleStmtPrepareOK(pkt []byte) {
 	numColumns := binary.LittleEndian.Uint16(payload[5:7])
 	numParams := binary.LittleEndian.Uint16(payload[7:9])
 
-	c.preparedStmts[stmtID] = c.lastQuery
+	c.preparedStmts[stmtID] = preparedStmt{query: c.lastQuery, numParams: int(numParams)}
 
 	// We need to skip param defs + EOF + column defs + EOF.
 	skip := 0
@@ -543,6 +571,140 @@ func (c *conn) finalizeResultSet(_ []byte) {
 // isEOFPacket returns true if the packet is an EOF packet (0xFE with payload < 9 bytes).
 func isEOFPacket(pkt []byte) bool {
 	return payloadByte(pkt) == iEOF && payloadLen(pkt) < 9
+}
+
+// ---------------- COM_STMT_EXECUTE args parsing ----------------
+
+// parseStmtExecuteArgs extracts parameter values from a COM_STMT_EXECUTE payload.
+//
+// Payload layout (after command byte):
+//
+//	[0..3]  stmt_id        (4 bytes, already consumed by caller)
+//	[4]     flags          (1 byte)
+//	[5..8]  iteration_count (4 bytes, always 1)
+//
+// If numParams > 0:
+//
+//	NULL bitmap            ((numParams+7)/8 bytes)
+//	new_params_bound_flag  (1 byte)
+//	if bound == 1:
+//	  type descriptors     (2 bytes each: type + unsigned flag)
+//	  values               (variable, per type)
+func parseStmtExecuteArgs(payload []byte, numParams int) []string {
+	if numParams == 0 {
+		return nil
+	}
+
+	// offset 1..4 = stmt_id, 5 = flags, 6..9 = iteration_count
+	off := 10 // past command(1) + stmt_id(4) + flags(1) + iteration_count(4)
+	nullBitmapLen := (numParams + 7) / 8
+	if off+nullBitmapLen+1 > len(payload) {
+		return nil
+	}
+
+	nullBitmap := payload[off : off+nullBitmapLen]
+	off += nullBitmapLen
+
+	boundFlag := payload[off]
+	off++
+
+	args := make([]string, numParams)
+
+	// Read type descriptors if new params are bound.
+	types := make([]byte, numParams)
+	if boundFlag == 1 {
+		if off+numParams*2 > len(payload) {
+			return nil
+		}
+		for i := range numParams {
+			types[i] = payload[off+i*2]
+			// payload[off+i*2+1] is the unsigned flag; ignored for string representation.
+		}
+		off += numParams * 2
+	}
+
+	// Read values.
+	for i := range numParams {
+		// Check NULL bitmap: bit (i) in byte (i/8), bit position (i%8).
+		if nullBitmap[i/8]&(1<<(i%8)) != 0 {
+			args[i] = "NULL"
+			continue
+		}
+		var val string
+		var n int
+		val, n = readBinaryValue(payload, off, types[i])
+		args[i] = val
+		off += n
+	}
+
+	return args
+}
+
+// readBinaryValue reads a single binary-encoded parameter value at offset,
+// returning the string representation and the number of bytes consumed.
+func readBinaryValue(data []byte, off int, typ byte) (string, int) {
+	if off >= len(data) {
+		return "?", 0
+	}
+
+	switch typ {
+	case mysqlTypeTiny:
+		if off+1 > len(data) {
+			return "?", 0
+		}
+		return strconv.Itoa(int(int8(data[off]))), 1
+
+	case mysqlTypeShort, mysqlTypeYear:
+		if off+2 > len(data) {
+			return "?", 0
+		}
+		v := int16(binary.LittleEndian.Uint16(data[off : off+2])) //nolint:gosec // interpreting as signed int16
+		return strconv.Itoa(int(v)), 2
+
+	case mysqlTypeLong, mysqlTypeInt24:
+		if off+4 > len(data) {
+			return "?", 0
+		}
+		v := int32(binary.LittleEndian.Uint32(data[off : off+4])) //nolint:gosec // interpreting as signed int32
+		return strconv.FormatInt(int64(v), 10), 4
+
+	case mysqlTypeLongLong:
+		if off+8 > len(data) {
+			return "?", 0
+		}
+		v := int64(binary.LittleEndian.Uint64(data[off : off+8])) //nolint:gosec // interpreting as signed int64
+		return strconv.FormatInt(v, 10), 8
+
+	case mysqlTypeFloat:
+		if off+4 > len(data) {
+			return "?", 0
+		}
+		v := math.Float32frombits(binary.LittleEndian.Uint32(data[off : off+4]))
+		return strconv.FormatFloat(float64(v), 'g', -1, 32), 4
+
+	case mysqlTypeDouble:
+		if off+8 > len(data) {
+			return "?", 0
+		}
+		v := math.Float64frombits(binary.LittleEndian.Uint64(data[off : off+8]))
+		return strconv.FormatFloat(v, 'g', -1, 64), 8
+
+	case mysqlTypeNull:
+		return "NULL", 0
+	}
+
+	// String types (VARCHAR, BLOB, VAR_STRING, STRING, NEWDECIMAL, etc.):
+	// length-encoded string.
+	length, n := readLenEncInt(data, off)
+	if n == 0 {
+		return "?", 0
+	}
+	off += n
+	end := off + int(length) //nolint:gosec // practically won't overflow
+	if end > len(data) {
+		return "?", 0
+	}
+	return string(data[off:end]), n + int(length) //nolint:gosec // practically won't overflow
 }
 
 // ---------------- transaction detection ----------------

@@ -238,6 +238,48 @@ func TestPreparedStatement(t *testing.T) {
 	if ev.Query != "SELECT ? + ?" {
 		t.Errorf("unexpected query: %q", ev.Query)
 	}
+	if len(ev.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(ev.Args))
+	}
+	if ev.Args[0] != "1" {
+		t.Errorf("expected arg[0]=%q, got %q", "1", ev.Args[0])
+	}
+	if ev.Args[1] != "2" {
+		t.Errorf("expected arg[1]=%q, got %q", "2", ev.Args[1])
+	}
+}
+
+func TestPreparedStatementStringArgs(t *testing.T) {
+	t.Parallel()
+	upstream := startMySQL(t)
+	p, addr := startProxy(t, upstream)
+	db := openDB(t, addr)
+
+	ctx := t.Context()
+	stmt, err := db.PrepareContext(ctx, "SELECT CONCAT(?, ?)")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	var result string
+	if err := stmt.QueryRowContext(ctx, "hello", "world").Scan(&result); err != nil {
+		t.Fatalf("query row: %v", err)
+	}
+	if result != "helloworld" {
+		t.Errorf("expected %q, got %q", "helloworld", result)
+	}
+
+	ev := waitEvent(t, p.Events())
+	if len(ev.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(ev.Args))
+	}
+	if ev.Args[0] != "hello" {
+		t.Errorf("expected arg[0]=%q, got %q", "hello", ev.Args[0])
+	}
+	if ev.Args[1] != "world" {
+		t.Errorf("expected arg[1]=%q, got %q", "world", ev.Args[1])
+	}
 }
 
 func TestTransactionDetection(t *testing.T) {
