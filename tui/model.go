@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -57,6 +58,9 @@ type Model struct {
 	collapsed   map[string]bool
 	displayRows []displayRow
 	txColorMap  map[string]lipgloss.Color
+
+	searchMode  bool
+	searchQuery string
 
 	inspectScroll  int
 	explainPlan    string
@@ -140,7 +144,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view != viewList {
 			return m, recvEvent(m.stream)
 		}
-		m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed)
+		m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed, m.searchQuery)
 		if m.follow {
 			m.cursor = max(len(m.displayRows)-1, 0)
 		}
@@ -220,19 +224,55 @@ func (m Model) View() string {
 
 	listHeight := max(m.height-12, 3)
 
-	help := "  q: quit  j/k: navigate  space: toggle tx  enter: inspect" +
-		"  c: copy query  C: copy with args  x/X: explain/analyze  e/E: edit+explain"
+	var footer string
+	switch {
+	case m.searchMode:
+		footer = fmt.Sprintf("  / %s█", m.searchQuery)
+	case m.searchQuery != "":
+		footer = "  q: quit  j/k: navigate  space: toggle tx  enter: inspect" +
+			"  c: copy query  C: copy with args  x/X: explain/analyze  e/E: edit+explain" +
+			"  esc: clear filter"
+	default:
+		footer = "  q: quit  j/k: navigate  space: toggle tx  enter: inspect" +
+			"  c: copy query  C: copy with args  x/X: explain/analyze  e/E: edit+explain" +
+			"  /: search"
+	}
 
 	return strings.Join([]string{
 		m.renderList(listHeight),
 		m.renderPreview(),
-		help,
+		footer,
 	}, "\n")
 }
 
 func rebuildDisplayRows(
-	events []*tapv1.QueryEvent, collapsed map[string]bool,
+	events []*tapv1.QueryEvent, collapsed map[string]bool, filter string,
 ) ([]displayRow, map[string]lipgloss.Color) {
+	matchedEvents := matchingEvents(events, filter)
+
+	// When filtering, show only matched events (flat, no tx grouping).
+	if filter != "" {
+		var rows []displayRow
+		colorMap := make(map[string]lipgloss.Color)
+		txCount := 0
+		for i, ev := range events {
+			if !matchedEvents[i] {
+				continue
+			}
+			if txID := ev.GetTxId(); txID != "" {
+				if _, ok := colorMap[txID]; !ok {
+					colorMap[txID] = txColors[txCount%len(txColors)]
+					txCount++
+				}
+			}
+			rows = append(rows, displayRow{
+				kind:     rowEvent,
+				eventIdx: i,
+			})
+		}
+		return rows, colorMap
+	}
+
 	var rows []displayRow
 	seenTx := make(map[string]bool)
 	colorMap := make(map[string]lipgloss.Color)
@@ -279,6 +319,26 @@ func rebuildDisplayRows(
 	}
 
 	return rows, colorMap
+}
+
+// matchingEvents returns a set of event indices whose query contains the filter (case-insensitive).
+// If filter is empty, all events match.
+func matchingEvents(events []*tapv1.QueryEvent, filter string) map[int]bool {
+	matched := make(map[int]bool, len(events))
+	if filter == "" {
+		for i := range events {
+			matched[i] = true
+		}
+		return matched
+	}
+
+	lower := strings.ToLower(filter)
+	for i, ev := range events {
+		if strings.Contains(strings.ToLower(ev.GetQuery()), lower) {
+			matched[i] = true
+		}
+	}
+	return matched
 }
 
 // txQueryCount returns the number of non-lifecycle events in a tx.
@@ -351,6 +411,10 @@ func (m Model) cursorEvent() *tapv1.QueryEvent {
 }
 
 func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.searchMode {
+		return m.updateSearch(msg)
+	}
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		if m.conn != nil {
@@ -375,24 +439,23 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			mode = explain.Analyze
 		}
 		return m.startEditExplain(mode)
-	case "c":
-		ev := m.cursorEvent()
-		if ev == nil || ev.GetQuery() == "" {
-			return m, nil
-		}
-		_ = clipboard.Copy(context.Background(), ev.GetQuery())
+	case "c", "C":
+		return m.copyQuery(msg.String() == "C"), nil
+	case "/":
+		m.searchMode = true
+		m.searchQuery = ""
 		return m, nil
-	case "C":
-		ev := m.cursorEvent()
-		if ev == nil || ev.GetQuery() == "" {
-			return m, nil
+	case "esc":
+		if m.searchQuery != "" {
+			m.searchQuery = ""
+			m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed, "")
+			m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 		}
-		_ = clipboard.Copy(context.Background(), query.Bind(ev.GetQuery(), ev.GetArgs()))
 		return m, nil
 	case " ":
 		if txID := m.cursorTxID(); txID != "" {
 			m.collapsed[txID] = !m.collapsed[txID]
-			m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed)
+			m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed, m.searchQuery)
 			for i, r := range m.displayRows {
 				if r.kind == rowTxSummary && r.txID == txID {
 					m.cursor = i
@@ -417,6 +480,77 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		m.searchMode = false
+		return m, nil
+	case "esc":
+		m.searchMode = false
+		m.searchQuery = ""
+		m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed, "")
+		m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
+		return m, nil
+	case "backspace":
+		if len(m.searchQuery) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.searchQuery)
+			m.searchQuery = m.searchQuery[:len(m.searchQuery)-size]
+			m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed, m.searchQuery)
+			m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
+		}
+		return m, nil
+	case "ctrl+c":
+		if m.conn != nil {
+			_ = m.conn.Close()
+		}
+		return m, tea.Quit
+	case "up", "down":
+		return m.navigateCursor(msg.String()), nil
+	}
+
+	// Ignore non-printable keys.
+	r := msg.Runes
+	if len(r) == 0 {
+		return m, nil
+	}
+
+	m.searchQuery += string(r)
+	m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed, m.searchQuery)
+	m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
+	return m, nil
+}
+
+func (m Model) navigateCursor(key string) Model {
+	switch key {
+	case "up":
+		if m.cursor > 0 {
+			m.cursor--
+			m.follow = false
+		}
+	case "down":
+		if len(m.displayRows) > 0 && m.cursor < len(m.displayRows)-1 {
+			m.cursor++
+		}
+		if len(m.displayRows) > 0 && m.cursor == len(m.displayRows)-1 {
+			m.follow = true
+		}
+	}
+	return m
+}
+
+func (m Model) copyQuery(withArgs bool) Model {
+	ev := m.cursorEvent()
+	if ev == nil || ev.GetQuery() == "" {
+		return m
+	}
+	text := ev.GetQuery()
+	if withArgs {
+		text = query.Bind(text, ev.GetArgs())
+	}
+	_ = clipboard.Copy(context.Background(), text)
+	return m
 }
 
 func (m Model) startEditExplain(mode explain.Mode) (tea.Model, tea.Cmd) {

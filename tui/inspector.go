@@ -23,7 +23,7 @@ func (m Model) updateInspect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "q":
 		m.view = viewList
-		m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed)
+		m.displayRows, m.txColorMap = rebuildDisplayRows(m.events, m.collapsed, m.searchQuery)
 		if m.follow {
 			m.cursor = max(len(m.displayRows)-1, 0)
 		}

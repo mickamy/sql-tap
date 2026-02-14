@@ -25,7 +25,18 @@ func (m Model) renderList(maxRows int) string {
 	innerWidth := max(m.width-4, 20)
 	colQuery := max(innerWidth-colMarker-colOp-colDuration-colTime-3, 10)
 
-	title := fmt.Sprintf(" sql-tap (%d queries) ", len(m.events))
+	var title string
+	if m.searchQuery != "" {
+		matched := 0
+		for _, dr := range m.displayRows {
+			if dr.kind == rowEvent {
+				matched++
+			}
+		}
+		title = fmt.Sprintf(" sql-tap (%d/%d queries) ", matched, len(m.events))
+	} else {
+		title = fmt.Sprintf(" sql-tap (%d queries) ", len(m.events))
+	}
 
 	border := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
