@@ -102,3 +102,40 @@ services:
     depends_on:
       mysql9:
         condition: service_healthy
+
+  tidb:
+    image: pingcap/tidb:latest
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:10080/status || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  tidb-init:
+    image: mysql:8
+    volumes:
+      - ./tidb/init.sql:/init.sql
+    entrypoint: ["sh", "-c", "mysql -h tidb -P 4000 -u root < /init.sql"]
+    depends_on:
+      tidb:
+        condition: service_healthy
+
+  tapd-tidb:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "4001:4001"
+      - "9094:9094"
+    environment:
+      DATABASE_URL: "root@tcp(tidb:4000)/db"
+    command:
+      - --driver=tidb
+      - --listen=:4001
+      - --upstream=tidb:4000
+      - --grpc=:9094
+    depends_on:
+      tidb-init:
+        condition: service_completed_successfully

@@ -35,7 +35,7 @@ func (m Mode) prefix(driver Driver) string {
 		case Analyze:
 			return "EXPLAIN ANALYZE "
 		}
-	case Postgres:
+	case Postgres, TiDB:
 		switch m {
 		case Explain:
 			return "EXPLAIN "
@@ -58,6 +58,7 @@ type Driver int
 const (
 	Postgres Driver = iota
 	MySQL
+	TiDB
 )
 
 // Client wraps a database connection for running EXPLAIN queries.
@@ -78,9 +79,9 @@ func (c *Client) Run(ctx context.Context, mode Mode, query string, args []string
 		anyArgs[i] = a
 	}
 
-	// MySQL cannot parse placeholder ? without args; replace with NULL for plan-only EXPLAIN.
+	// MySQL/TiDB cannot parse placeholder ? without args; replace with NULL for plan-only EXPLAIN.
 	q := query
-	if c.driver == MySQL && len(anyArgs) == 0 {
+	if (c.driver == MySQL || c.driver == TiDB) && len(anyArgs) == 0 {
 		q = strings.ReplaceAll(q, "?", "NULL")
 	}
 
@@ -91,13 +92,29 @@ func (c *Client) Run(ctx context.Context, mode Mode, query string, args []string
 	}
 	defer func() { _ = rows.Close() }()
 
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("explain: columns: %w", err)
+	}
+
 	var lines []string
+	if len(cols) > 1 {
+		lines = append(lines, strings.Join(cols, "\t"))
+	}
 	for rows.Next() {
-		var line string
-		if err := rows.Scan(&line); err != nil {
+		vals := make([]sql.NullString, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
 			return nil, fmt.Errorf("explain: scan: %w", err)
 		}
-		lines = append(lines, line)
+		parts := make([]string, len(cols))
+		for i, v := range vals {
+			parts[i] = v.String
+		}
+		lines = append(lines, strings.Join(parts, "\t"))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("explain: rows: %w", err)

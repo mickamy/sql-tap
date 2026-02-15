@@ -32,7 +32,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nEnvironment:\n  DATABASE_URL    DSN for EXPLAIN queries (read by default via -dsn-env)\n")
 	}
 
-	driver := fs.String("driver", "", "database driver: postgres, mysql (required)")
+	driver := fs.String("driver", "", "database driver: postgres, mysql, tidb (required)")
 	listen := fs.String("listen", "", "client listen address (required)")
 	upstream := fs.String("upstream", "", "upstream database address (required)")
 	grpcAddr := fs.String("grpc", ":9091", "gRPC server address for TUI")
@@ -74,6 +74,8 @@ func run(driver, listen, upstream, grpcAddr, dsnEnv string) error {
 		switch driver {
 		case "mysql":
 			explainDriver = explain.MySQL
+		case "tidb":
+			explainDriver = explain.TiDB
 		case "postgres":
 			explainDriver = explain.Postgres
 		}
@@ -103,7 +105,7 @@ func run(driver, listen, upstream, grpcAddr, dsnEnv string) error {
 	switch driver {
 	case "postgres":
 		p = postgres.New(listen, upstream)
-	case "mysql":
+	case "mysql", "tidb":
 		p = mysql.New(listen, upstream)
 	default:
 		return fmt.Errorf("unsupported driver: %s", driver)
