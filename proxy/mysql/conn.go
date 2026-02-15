@@ -60,8 +60,9 @@ const (
 
 // MySQL capability flags.
 const (
-	clientSSL          uint32 = 1 << 11
-	clientDeprecateEOF uint32 = 1 << 24
+	clientSSL             uint32 = 1 << 11
+	clientDeprecateEOF    uint32 = 1 << 24
+	clientQueryAttributes uint32 = 1 << 27
 )
 
 // responseState tracks where we are in parsing a server response sequence.
@@ -239,7 +240,7 @@ func (c *conn) relayStartup() error {
 	if err != nil {
 		return fmt.Errorf("mysql: read greeting: %w", err)
 	}
-	clearCapabilityBits(greeting, clientSSL|clientDeprecateEOF)
+	clearCapabilityBits(greeting, clientSSL|clientDeprecateEOF|clientQueryAttributes)
 	if err := writePacket(c.clientConn, greeting); err != nil {
 		return fmt.Errorf("mysql: send greeting: %w", err)
 	}
@@ -249,7 +250,7 @@ func (c *conn) relayStartup() error {
 	if err != nil {
 		return fmt.Errorf("mysql: read handshake response: %w", err)
 	}
-	clearClientCapabilityBits(resp, clientDeprecateEOF)
+	clearClientCapabilityBits(resp, clientDeprecateEOF|clientQueryAttributes)
 	if err := writePacket(c.upstreamConn, resp); err != nil {
 		return fmt.Errorf("mysql: send handshake response: %w", err)
 	}
