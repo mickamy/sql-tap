@@ -60,9 +60,11 @@ const (
 
 // MySQL capability flags.
 const (
-	clientSSL             uint32 = 1 << 11
-	clientDeprecateEOF    uint32 = 1 << 24
-	clientQueryAttributes uint32 = 1 << 27
+	clientCompress            uint32 = 1 << 5
+	clientSSL                 uint32 = 1 << 11
+	clientDeprecateEOF        uint32 = 1 << 24
+	clientZstdCompressionAlgo uint32 = 1 << 26
+	clientQueryAttributes     uint32 = 1 << 27
 )
 
 // responseState tracks where we are in parsing a server response sequence.
@@ -235,22 +237,29 @@ func clearClientCapabilityBits(pkt []byte, bits uint32) {
 
 // relayStartup handles the MySQL handshake/auth phase.
 func (c *conn) relayStartup() error {
-	// 1. Read server greeting, strip SSL and DEPRECATE_EOF capabilities.
+	// Capabilities the proxy must disable because it inspects raw packets.
+	const stripCaps = clientSSL |
+		clientCompress |
+		clientDeprecateEOF |
+		clientZstdCompressionAlgo |
+		clientQueryAttributes
+
+	// 1. Read server greeting, strip unsupported capabilities.
 	greeting, err := readPacket(c.upstreamConn)
 	if err != nil {
 		return fmt.Errorf("mysql: read greeting: %w", err)
 	}
-	clearCapabilityBits(greeting, clientSSL|clientDeprecateEOF|clientQueryAttributes)
+	clearCapabilityBits(greeting, stripCaps)
 	if err := writePacket(c.clientConn, greeting); err != nil {
 		return fmt.Errorf("mysql: send greeting: %w", err)
 	}
 
-	// 2. Read client handshake response, strip DEPRECATE_EOF.
+	// 2. Read client handshake response, strip unsupported capabilities.
 	resp, err := readPacket(c.clientConn)
 	if err != nil {
 		return fmt.Errorf("mysql: read handshake response: %w", err)
 	}
-	clearClientCapabilityBits(resp, clientDeprecateEOF|clientQueryAttributes)
+	clearClientCapabilityBits(resp, stripCaps)
 	if err := writePacket(c.upstreamConn, resp); err != nil {
 		return fmt.Errorf("mysql: send handshake response: %w", err)
 	}
