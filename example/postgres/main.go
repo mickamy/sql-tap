@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -48,6 +49,7 @@ func run() error {
 		doRollback(ctx, db, i)
 		doConcurrentTransactions(ctx, db, i)
 		doLongQuery(ctx, db, i)
+		doUUIDQuery(ctx, db)
 
 		select {
 		case <-ctx.Done():
@@ -163,6 +165,29 @@ func doConcurrentTransactions(ctx context.Context, db *sql.DB, i int) {
 		})
 	}
 	wg.Wait()
+}
+
+func doUUIDQuery(ctx context.Context, _ *sql.DB) {
+	// Use pgx native connection to send UUID params in binary format.
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		log.Printf("uuid pgx connect: %v", err)
+		return
+	}
+	defer func() { _ = conn.Close(ctx) }()
+
+	ids := [][16]byte{
+		{0xa0, 0xee, 0xbc, 0x99, 0x9c, 0x0b, 0x4e, 0xf8, 0xbb, 0x6d, 0x6b, 0xb9, 0xbd, 0x38, 0x0a, 0x11},
+		{0xb1, 0xff, 0xc9, 0x9a, 0x8d, 0x1c, 0x4e, 0xf9, 0xcc, 0x7e, 0x7c, 0xca, 0xde, 0x49, 0x1b, 0x22},
+		{0xc2, 0x00, 0xda, 0x9b, 0x7e, 0x2d, 0x4f, 0xfa, 0xdd, 0x8f, 0x8d, 0xdb, 0xef, 0x5a, 0x2c, 0x33},
+	}
+	var name string
+	for _, id := range ids {
+		_ = conn.QueryRow(ctx,
+			"SELECT name FROM projects WHERE id = $1", id,
+		).Scan(&name)
+	}
+	fmt.Printf("uuid query done (last: %s)\n", name)
 }
 
 func doLongQuery(ctx context.Context, db *sql.DB, i int) {

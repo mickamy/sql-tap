@@ -327,7 +327,7 @@ func isBinaryFormat(codes []int16, i int) bool {
 }
 
 // decodeBinaryParam attempts to decode a binary-format parameter into a readable string.
-// Without type OID information, we use the byte length as a heuristic for common integer types.
+// Without type OID information, we use the byte length as a heuristic for common types.
 func decodeBinaryParam(p []byte) string {
 	switch len(p) {
 	case 1:
@@ -339,6 +339,12 @@ func decodeBinaryParam(p []byte) string {
 		return strconv.FormatInt(int64(int32(binary.BigEndian.Uint32(p))), 10) //nolint:gosec // interpreting as signed int32
 	case 8:
 		return strconv.FormatInt(int64(binary.BigEndian.Uint64(p)), 10) //nolint:gosec // interpreting as signed int64
+	case 16:
+		// UUID
+		u, err := uuid.FromBytes(p)
+		if err == nil {
+			return u.String()
+		}
 	}
 	return string(p)
 }
