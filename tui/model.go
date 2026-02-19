@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -68,9 +67,13 @@ type Model struct {
 	displayRows []displayRow
 	txColorMap  map[string]lipgloss.Color
 
-	searchMode  bool
-	searchQuery string
-	sortMode    sortMode
+	searchMode   bool
+	searchQuery  string
+	searchCursor int
+	filterMode   bool
+	filterQuery  string
+	filterCursor int
+	sortMode     sortMode
 
 	inspectScroll  int
 	explainPlan    string
@@ -185,7 +188,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.query == "" {
-			return m, nil // cancelled
+			return m, nil // canceled
 		}
 		m.view = viewExplain
 		m.explainPlan = ""
@@ -241,23 +244,33 @@ func (m Model) View() string {
 	case viewList:
 	}
 
-	listHeight := m.listHeight()
-
 	var footer string
 	switch {
 	case m.searchMode:
-		footer = fmt.Sprintf("  / %s█", m.searchQuery)
+		footer = "  / " + renderInputWithCursor(m.searchQuery, m.searchCursor)
+	case m.filterMode:
+		footer = "  filter: " + renderInputWithCursor(m.filterQuery, m.filterCursor)
 	default:
-		footer = "  q: quit  j/k: navigate  space: toggle tx  enter: inspect  a: analytics" +
-			"  c/C: copy/with args  x/X: explain/analyze  e/E: edit+explain" +
-			"  /: search  s: sort"
-		if m.searchQuery != "" {
-			footer += "  esc: clear filter"
+		items := []string{
+			"q: quit", "j/k: navigate", "space: toggle tx",
+			"enter: inspect", "a: analytics",
+			"c/C: copy", "x/X: explain",
+			"e/E: edit+explain", "/: search", "f: filter", "s: sort",
+		}
+		footer = wrapFooterItems(items, m.width)
+		if m.filterQuery != "" {
+			footer += "\n  " + fmt.Sprintf("[filter: %s]", describeFilter(m.filterQuery))
+		}
+		if m.searchQuery != "" || m.filterQuery != "" {
+			footer += "  esc: clear"
 		}
 		if m.sortMode == sortDuration {
 			footer += "  [sorted: duration]"
 		}
 	}
+
+	footerLines := strings.Count(footer, "\n") + 1
+	listHeight := m.listHeight(footerLines)
 
 	return strings.Join([]string{
 		m.renderList(listHeight),
@@ -266,15 +279,19 @@ func (m Model) View() string {
 	}, "\n")
 }
 
-func (m Model) listHeight() int {
-	return max(m.height-12, 3)
+func (m Model) listHeight(footerLines int) int {
+	// 12 = header border (1) + preview box (~8-9 lines) + footer (1) + padding.
+	// Adjust by extra footer lines beyond the default 1.
+	extra := max(footerLines-1, 0)
+	return max(m.height-12-extra, 3)
 }
 
 func (m Model) rebuildDisplayRows() ([]displayRow, map[string]lipgloss.Color) {
-	matchedEvents := matchingEvents(m.events, m.searchQuery)
+	matchedEvents := matchingEventsFiltered(m.events, m.filterQuery, m.searchQuery)
 
+	active := m.filterQuery != "" || m.searchQuery != ""
 	// When filtering or sorting by duration, show flat list (no tx grouping).
-	if m.searchQuery != "" || m.sortMode == sortDuration {
+	if active || m.sortMode == sortDuration {
 		var rows []displayRow
 		colorMap := make(map[string]lipgloss.Color)
 		txCount := 0
@@ -351,22 +368,25 @@ func (m Model) rebuildDisplayRows() ([]displayRow, map[string]lipgloss.Color) {
 	return rows, colorMap
 }
 
-// matchingEvents returns a set of event indices whose query contains the filter (case-insensitive).
-// If filter is empty, all events match.
-func matchingEvents(events []*tapv1.QueryEvent, filter string) map[int]bool {
+// matchingEventsFiltered returns a set of event indices that pass both the structured
+// filter (filterQuery) and the text search (searchQuery). Either may be empty.
+func matchingEventsFiltered(events []*tapv1.QueryEvent, filterQuery, searchQuery string) map[int]bool {
 	matched := make(map[int]bool, len(events))
-	if filter == "" {
-		for i := range events {
-			matched[i] = true
-		}
-		return matched
-	}
 
-	lower := strings.ToLower(filter)
+	var filterConds []filterCondition
+	if filterQuery != "" {
+		filterConds = parseFilter(filterQuery)
+	}
+	searchLower := strings.ToLower(searchQuery)
+
 	for i, ev := range events {
-		if strings.Contains(strings.ToLower(ev.GetQuery()), lower) {
-			matched[i] = true
+		if len(filterConds) > 0 && !matchAllConditions(ev, filterConds) {
+			continue
 		}
+		if searchLower != "" && !strings.Contains(strings.ToLower(ev.GetQuery()), searchLower) {
+			continue
+		}
+		matched[i] = true
 	}
 	return matched
 }
@@ -444,6 +464,9 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.searchMode {
 		return m.updateSearch(msg)
 	}
+	if m.filterMode {
+		return m.updateFilter(msg)
+	}
 
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -466,6 +489,12 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.searchMode = true
 		m.searchQuery = ""
+		m.searchCursor = 0
+		return m, nil
+	case "f":
+		m.filterMode = true
+		m.filterQuery = ""
+		m.filterCursor = 0
 		return m, nil
 	case "s":
 		return m.toggleSort(), nil
@@ -474,43 +503,15 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		return m.clearFilter(), nil
 	case " ":
-		if txID := m.cursorTxID(); txID != "" {
-			m.collapsed[txID] = !m.collapsed[txID]
-			m.displayRows, m.txColorMap = m.rebuildDisplayRows()
-			for i, r := range m.displayRows {
-				if r.kind == rowTxSummary && r.txID == txID {
-					m.cursor = i
-					break
-				}
-			}
-		}
-		return m, nil
+		return m.toggleTx(), nil
 	case "j", "down":
-		if len(m.displayRows) > 0 && m.cursor < len(m.displayRows)-1 {
-			m.cursor++
-		}
-		if len(m.displayRows) > 0 && m.cursor == len(m.displayRows)-1 {
-			m.follow = true
-		}
-		return m, nil
+		return m.navigateCursor(msg.String()), nil
 	case "k", "up":
-		if m.cursor > 0 {
-			m.cursor--
-			m.follow = false
-		}
-		return m, nil
+		return m.navigateCursor(msg.String()), nil
 	case "ctrl+d", "pgdown":
-		half := max(m.listHeight()/2, 1)
-		m.cursor = min(m.cursor+half, max(len(m.displayRows)-1, 0))
-		if len(m.displayRows) > 0 && m.cursor == len(m.displayRows)-1 {
-			m.follow = true
-		}
-		return m, nil
+		return m.pageScroll(msg.String()), nil
 	case "ctrl+u", "pgup":
-		half := max(m.listHeight()/2, 1)
-		m.cursor = max(m.cursor-half, 0)
-		m.follow = false
-		return m, nil
+		return m.pageScroll(msg.String()), nil
 	}
 	return m, nil
 }
@@ -527,9 +528,10 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 		return m, nil
 	case "backspace":
-		if len(m.searchQuery) > 0 {
-			_, size := utf8.DecodeLastRuneInString(m.searchQuery)
-			m.searchQuery = m.searchQuery[:len(m.searchQuery)-size]
+		if m.searchCursor > 0 {
+			runes := []rune(m.searchQuery)
+			m.searchQuery = string(runes[:m.searchCursor-1]) + string(runes[m.searchCursor:])
+			m.searchCursor--
 			m.displayRows, m.txColorMap = m.rebuildDisplayRows()
 			m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 		}
@@ -539,6 +541,16 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			_ = m.conn.Close()
 		}
 		return m, tea.Quit
+	case "left":
+		if m.searchCursor > 0 {
+			m.searchCursor--
+		}
+		return m, nil
+	case "right":
+		if m.searchCursor < len([]rune(m.searchQuery)) {
+			m.searchCursor++
+		}
+		return m, nil
 	case "up", "down":
 		return m.navigateCursor(msg.String()), nil
 	}
@@ -549,10 +561,96 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.searchQuery += string(r)
+	runes := []rune(m.searchQuery)
+	m.searchQuery = string(runes[:m.searchCursor]) + string(r) + string(runes[m.searchCursor:])
+	m.searchCursor += len(r)
 	m.displayRows, m.txColorMap = m.rebuildDisplayRows()
 	m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 	return m, nil
+}
+
+func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		m.filterMode = false
+		return m, nil
+	case "esc":
+		m.filterMode = false
+		m.filterQuery = ""
+		m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+		m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
+		return m, nil
+	case "backspace":
+		if m.filterCursor > 0 {
+			runes := []rune(m.filterQuery)
+			m.filterQuery = string(runes[:m.filterCursor-1]) + string(runes[m.filterCursor:])
+			m.filterCursor--
+			m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+			m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
+		}
+		return m, nil
+	case "ctrl+c":
+		if m.conn != nil {
+			_ = m.conn.Close()
+		}
+		return m, tea.Quit
+	case "left":
+		if m.filterCursor > 0 {
+			m.filterCursor--
+		}
+		return m, nil
+	case "right":
+		if m.filterCursor < len([]rune(m.filterQuery)) {
+			m.filterCursor++
+		}
+		return m, nil
+	case "up", "down":
+		return m.navigateCursor(msg.String()), nil
+	}
+
+	// Ignore non-printable keys.
+	r := msg.Runes
+	if len(r) == 0 {
+		return m, nil
+	}
+
+	runes := []rune(m.filterQuery)
+	m.filterQuery = string(runes[:m.filterCursor]) + string(r) + string(runes[m.filterCursor:])
+	m.filterCursor += len(r)
+	m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+	m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
+	return m, nil
+}
+
+func (m Model) toggleTx() Model {
+	txID := m.cursorTxID()
+	if txID == "" {
+		return m
+	}
+	m.collapsed[txID] = !m.collapsed[txID]
+	m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+	for i, r := range m.displayRows {
+		if r.kind == rowTxSummary && r.txID == txID {
+			m.cursor = i
+			break
+		}
+	}
+	return m
+}
+
+func (m Model) pageScroll(key string) Model {
+	half := max(m.listHeight(1)/2, 1)
+	switch key {
+	case "ctrl+d", "pgdown":
+		m.cursor = min(m.cursor+half, max(len(m.displayRows)-1, 0))
+		if len(m.displayRows) > 0 && m.cursor == len(m.displayRows)-1 {
+			m.follow = true
+		}
+	case "ctrl+u", "pgup":
+		m.cursor = max(m.cursor-half, 0)
+		m.follow = false
+	}
+	return m
 }
 
 func (m Model) navigateCursor(key string) Model {
@@ -609,8 +707,16 @@ func (m Model) enterAnalytics() Model {
 }
 
 func (m Model) clearFilter() Model {
+	changed := false
 	if m.searchQuery != "" {
 		m.searchQuery = ""
+		changed = true
+	}
+	if m.filterQuery != "" {
+		m.filterQuery = ""
+		changed = true
+	}
+	if changed {
 		m.displayRows, m.txColorMap = m.rebuildDisplayRows()
 		m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 	}

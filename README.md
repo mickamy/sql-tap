@@ -134,11 +134,12 @@ Flags:
 | `k` / `↑`         | Move up                              |
 | `Ctrl+d` / `PgDn` | Half-page down                       |
 | `Ctrl+u` / `PgUp` | Half-page up                         |
-| `/`               | Incremental search                   |
+| `/`               | Incremental text search              |
+| `f`               | Structured filter (see below)        |
 | `s`               | Toggle sort (chronological/duration) |
 | `Enter`           | Inspect query / transaction          |
 | `Space`           | Toggle transaction expand / collapse |
-| `Esc`             | Clear search filter                  |
+| `Esc`             | Clear search / filter                |
 | `x`               | EXPLAIN                              |
 | `X`               | EXPLAIN ANALYZE                      |
 | `e`               | Edit query, then EXPLAIN             |
@@ -186,6 +187,29 @@ Flags:
 | `c`       | Copy explain plan                |
 | `e` / `E` | Edit and re-explain / re-analyze |
 | `q`       | Back to list                     |
+
+## Filter syntax
+
+Press `f` in the list view to enter filter mode. Filters support structured conditions that go beyond simple text search.
+
+| Syntax      | Meaning                 | Example                               |
+|-------------|-------------------------|---------------------------------------|
+| `d>100ms`   | Duration greater than   | `d>1s`, `d>500us`                     |
+| `d<10ms`    | Duration less than      | `d<50ms`                              |
+| `error`     | Events with errors only |                                       |
+| `op:select` | SQL keyword prefix      | `op:insert`, `op:update`, `op:delete` |
+| `op:begin`  | Protocol operation      | `op:commit`, `op:rollback`            |
+| _(other)_   | Text substring match    | `users`, `WHERE id`                   |
+
+Multiple tokens are separated by spaces and combined with AND logic:
+
+```
+op:select d>100ms
+```
+
+This shows only SELECT queries that took longer than 100ms.
+
+Both `/` (text search) and `f` (filter) can be active simultaneously — the filter is applied first, then the text search narrows the results further.
 
 ## How it works
 

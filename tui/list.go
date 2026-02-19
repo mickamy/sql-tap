@@ -26,7 +26,7 @@ func (m Model) renderList(maxRows int) string {
 	colQuery := max(innerWidth-colMarker-colOp-colDuration-colTime-3, 10)
 
 	var title string
-	if m.searchQuery != "" {
+	if m.searchQuery != "" || m.filterQuery != "" {
 		matched := 0
 		for _, dr := range m.displayRows {
 			if dr.kind == rowEvent {

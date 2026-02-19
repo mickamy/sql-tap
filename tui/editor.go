@@ -77,7 +77,8 @@ func openEditor(query string, args []string, mode explain.Mode) tea.Cmd {
 
 // stripComments removes SQL single-line comments (-- ...) and trims whitespace.
 func stripComments(s string) string {
-	var lines []string
+	split := strings.Split(s, "\n")
+	lines := make([]string, 0, len(split))
 	for line := range strings.SplitSeq(s, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "--") {

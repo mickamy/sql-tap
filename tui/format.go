@@ -79,6 +79,15 @@ func formatTime(t *timestamppb.Timestamp) string {
 	return t.AsTime().In(time.Local).Format("15:04:05.000") //nolint:gosmopolitan // TUI displays local time
 }
 
+// renderInputWithCursor renders a text input with a block cursor at the given rune position.
+func renderInputWithCursor(text string, cursorPos int) string {
+	runes := []rune(text)
+	if cursorPos >= len(runes) {
+		return text + "█"
+	}
+	return string(runes[:cursorPos]) + "█" + string(runes[cursorPos:])
+}
+
 func friendlyError(err error, width int) string {
 	msg := err.Error()
 
