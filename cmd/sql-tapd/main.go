@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/mickamy/sql-tap/broker"
+	"github.com/mickamy/sql-tap/detect"
 	"github.com/mickamy/sql-tap/dsn"
 	"github.com/mickamy/sql-tap/explain"
 	"github.com/mickamy/sql-tap/proxy"
@@ -40,6 +42,9 @@ func main() {
 	grpcAddr := fs.String("grpc", ":9091", "gRPC server address for TUI")
 	dsnEnv := fs.String("dsn-env", "DATABASE_URL", "environment variable holding DSN for EXPLAIN")
 	httpAddr := fs.String("http", "", "HTTP server address for web UI (e.g. :8080)")
+	nplus1Threshold := fs.Int("nplus1-threshold", 5, "N+1 detection threshold (0 to disable)")
+	nplus1Window := fs.Duration("nplus1-window", time.Second, "N+1 detection time window")
+	nplus1Cooldown := fs.Duration("nplus1-cooldown", 10*time.Second, "N+1 alert cooldown per query template")
 	showVersion := fs.Bool("version", false, "show version and exit")
 
 	_ = fs.Parse(os.Args[1:])
@@ -54,12 +59,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*driver, *listen, *upstream, *grpcAddr, *dsnEnv, *httpAddr); err != nil {
+	err := run(
+		*driver, *listen, *upstream, *grpcAddr, *dsnEnv, *httpAddr,
+		*nplus1Threshold, *nplus1Window, *nplus1Cooldown,
+	)
+	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(driver, listen, upstream, grpcAddr, dsnEnv, httpAddr string) error {
+func run(
+	driver, listen, upstream, grpcAddr, dsnEnv, httpAddr string,
+	nplus1Threshold int, nplus1Window, nplus1Cooldown time.Duration,
+) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -134,8 +146,24 @@ func run(driver, listen, upstream, grpcAddr, dsnEnv, httpAddr string) error {
 		return fmt.Errorf("unsupported driver: %s", driver)
 	}
 
+	// N+1 detector (optional)
+	var det *detect.Detector
+	if nplus1Threshold > 0 {
+		det = detect.New(nplus1Threshold, nplus1Window, nplus1Cooldown)
+		log.Printf("N+1 detection enabled (threshold=%d, window=%s, cooldown=%s)",
+			nplus1Threshold, nplus1Window, nplus1Cooldown)
+	}
+
 	go func() {
 		for ev := range p.Events() {
+			if det != nil && isSelectQuery(ev.Op, ev.Query) {
+				r := det.Record(ev.Query, ev.StartTime)
+				ev.NPlus1 = r.Matched
+				if r.Alert != nil {
+					log.Printf("N+1 detected: %q (%d times in %s)",
+						r.Alert.Query, r.Alert.Count, nplus1Window)
+				}
+			}
 			b.Publish(ev)
 		}
 	}()
@@ -147,4 +175,15 @@ func run(driver, listen, upstream, grpcAddr, dsnEnv, httpAddr string) error {
 
 	srv.GracefulStop()
 	return nil
+}
+
+func isSelectQuery(op proxy.Op, query string) bool {
+	switch op {
+	case proxy.OpQuery, proxy.OpExec, proxy.OpExecute:
+		q := strings.TrimSpace(query)
+		return len(q) >= 6 && strings.EqualFold(q[:6], "SELECT")
+	case proxy.OpPrepare, proxy.OpBind, proxy.OpBegin, proxy.OpCommit, proxy.OpRollback:
+		return false
+	}
+	return false
 }

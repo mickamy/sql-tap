@@ -51,6 +51,11 @@ func run() error {
 		doLongQuery(ctx, db, i)
 		doUUIDQuery(ctx, db)
 
+		// Occasionally simulate N+1 queries.
+		if i%3 == 0 {
+			doNPlus1(ctx, db, i)
+		}
+
 		select {
 		case <-ctx.Done():
 			fmt.Println("shutting down")
@@ -188,6 +193,18 @@ func doUUIDQuery(ctx context.Context, _ *sql.DB) {
 		).Scan(&name)
 	}
 	fmt.Printf("uuid query done (last: %s)\n", name)
+}
+
+func doNPlus1(ctx context.Context, db *sql.DB, i int) {
+	// Simulate N+1: fetch user IDs, then query each one individually.
+	for j := range 10 {
+		var name string
+		_ = db.QueryRowContext(ctx,
+			"SELECT name FROM users WHERE id = $1",
+			(i+j)%100+1,
+		).Scan(&name)
+	}
+	fmt.Printf("[%d] N+1 simulation done (10 individual SELECTs)\n", i)
 }
 
 func doLongQuery(ctx context.Context, db *sql.DB, i int) {

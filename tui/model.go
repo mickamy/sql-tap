@@ -172,6 +172,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case eventMsg:
 		m.events = append(m.events, msg.Event)
+
+		if msg.Event.GetNPlus_1() {
+			q := msg.Event.GetQuery()
+			if len(q) > 60 {
+				q = q[:57] + "..."
+			}
+			m, alertCmd := m.showAlert("N+1 detected: " + q)
+			if m.view != viewList {
+				return m, tea.Batch(alertCmd, recvEvent(m.stream))
+			}
+			m = m.rebuild()
+			if m.follow {
+				m.cursor = max(len(m.displayRows)-1, 0)
+			}
+			return m, tea.Batch(alertCmd, recvEvent(m.stream))
+		}
+
 		if m.view != viewList {
 			return m, recvEvent(m.stream)
 		}

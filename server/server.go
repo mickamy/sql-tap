@@ -118,6 +118,7 @@ func eventToProto(ev proxy.Event) *tapv1.QueryEvent {
 		RowsAffected: ev.RowsAffected,
 		Error:        sanitizeUTF8(ev.Error),
 		TxId:         ev.TxID,
+		NPlus_1:      ev.NPlus1,
 	}
 }
 

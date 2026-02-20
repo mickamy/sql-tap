@@ -53,6 +53,7 @@ type Event struct {
 	RowsAffected int64
 	Error        string
 	TxID         string
+	NPlus1       bool
 }
 
 // Proxy is the common interface for DB protocol proxies.

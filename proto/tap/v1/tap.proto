@@ -15,6 +15,7 @@ message QueryEvent {
   int64 rows_affected = 7;
   string error = 8;
   string tx_id = 9;
+  bool n_plus_1 = 10;
 }
 
 message WatchRequest {}

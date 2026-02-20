@@ -49,6 +49,10 @@ func run() error {
 		doConcurrentTransactions(ctx, db, i)
 		doLongQuery(ctx, db, i)
 
+		if i%3 == 0 {
+			doNPlus1(ctx, db, i)
+		}
+
 		select {
 		case <-ctx.Done():
 			fmt.Println("shutting down")
@@ -163,6 +167,17 @@ func doConcurrentTransactions(ctx context.Context, db *sql.DB, i int) {
 		})
 	}
 	wg.Wait()
+}
+
+func doNPlus1(ctx context.Context, db *sql.DB, i int) {
+	for j := range 10 {
+		var name string
+		_ = db.QueryRowContext(ctx,
+			"SELECT name FROM users WHERE id = ?",
+			(i+j)%100+1,
+		).Scan(&name)
+	}
+	fmt.Printf("[%d] N+1 simulation done (10 individual SELECTs)\n", i)
 }
 
 func doLongQuery(ctx context.Context, db *sql.DB, i int) {

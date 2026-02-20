@@ -58,7 +58,7 @@ function renderTable() {
   const fragment = document.createDocumentFragment();
   for (const {ev, idx} of filtered) {
     const tr = document.createElement('tr');
-    tr.className = 'row' + (idx === selectedIdx ? ' selected' : '') + (ev.error ? ' has-error' : '');
+    tr.className = 'row' + (idx === selectedIdx ? ' selected' : '') + (ev.error ? ' has-error' : '') + (ev.n_plus_1 ? ' n-plus-1' : '');
     tr.dataset.idx = idx;
     tr.onclick = () => selectRow(idx);
     tr.innerHTML =
@@ -66,17 +66,23 @@ function renderTable() {
       `<td class="col-op">${escapeHTML(ev.op)}</td>` +
       `<td class="col-query">${escapeHTML(ev.query || '-')}</td>` +
       `<td class="col-dur">${escapeHTML(fmtDur(ev.duration_ms))}</td>` +
-      `<td class="col-err">${ev.error ? '\u26a0' : ''}</td>`;
+      `<td class="col-err">${ev.error ? 'E' : ev.n_plus_1 ? 'N+1' : ''}</td>`;
     fragment.appendChild(tr);
   }
   tbody.replaceChildren(fragment);
 
-  if (autoScroll) {
+  if (autoScroll && selectedIdx < 0) {
     tableWrap.scrollTop = tableWrap.scrollHeight;
   }
 }
 
 function selectRow(idx) {
+  if (selectedIdx === idx) {
+    selectedIdx = -1;
+    detailEl.className = '';
+    renderTable();
+    return;
+  }
   selectedIdx = idx;
   const ev = events[idx];
   document.getElementById('d-op').textContent = ev.op;
@@ -211,6 +217,9 @@ function connectSSE() {
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data);
     events.push(ev);
+    if (ev.n_plus_1) {
+      showToast('N+1 detected: ' + (ev.query || '').substring(0, 80));
+    }
     renderTable();
   };
   es.onerror = () => {

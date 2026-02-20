@@ -69,6 +69,7 @@ tr.row { cursor: pointer; }
 tr.row:hover { background: #2a2d2e; }
 tr.row.selected { background: #094771; }
 tr.row.has-error td { color: #f44747; }
+tr.row.n-plus-1 td { color: #e5c07b; }
 
 .col-time { width: 110px; }
 .col-op { width: 70px; }

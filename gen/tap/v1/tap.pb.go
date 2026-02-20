@@ -34,6 +34,7 @@ type QueryEvent struct {
 	RowsAffected  int64                  `protobuf:"varint,7,opt,name=rows_affected,json=rowsAffected,proto3" json:"rows_affected,omitempty"`
 	Error         string                 `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
 	TxId          string                 `protobuf:"bytes,9,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
+	NPlus_1       bool                   `protobuf:"varint,10,opt,name=n_plus_1,json=nPlus1,proto3" json:"n_plus_1,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -129,6 +130,13 @@ func (x *QueryEvent) GetTxId() string {
 		return x.TxId
 	}
 	return ""
+}
+
+func (x *QueryEvent) GetNPlus_1() bool {
+	if x != nil {
+		return x.NPlus_1
+	}
+	return false
 }
 
 type WatchRequest struct {
@@ -319,7 +327,7 @@ var File_tap_v1_tap_proto protoreflect.FileDescriptor
 
 const file_tap_v1_tap_proto_rawDesc = "" +
 	"\n" +
-	"\x10tap/v1/tap.proto\x12\x06tap.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/duration.proto\"\x98\x02\n" +
+	"\x10tap/v1/tap.proto\x12\x06tap.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/duration.proto\"\xb2\x02\n" +
 	"\n" +
 	"QueryEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x0e\n" +
@@ -331,7 +339,9 @@ const file_tap_v1_tap_proto_rawDesc = "" +
 	"\bduration\x18\x06 \x01(\v2\x19.google.protobuf.DurationR\bduration\x12#\n" +
 	"\rrows_affected\x18\a \x01(\x03R\frowsAffected\x12\x14\n" +
 	"\x05error\x18\b \x01(\tR\x05error\x12\x13\n" +
-	"\x05tx_id\x18\t \x01(\tR\x04txId\"\x0e\n" +
+	"\x05tx_id\x18\t \x01(\tR\x04txId\x12\x18\n" +
+	"\bn_plus_1\x18\n" +
+	" \x01(\bR\x06nPlus1\"\x0e\n" +
 	"\fWatchRequest\"9\n" +
 	"\rWatchResponse\x12(\n" +
 	"\x05event\x18\x01 \x01(\v2\x12.tap.v1.QueryEventR\x05event\"T\n" +

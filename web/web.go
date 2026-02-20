@@ -78,6 +78,7 @@ type eventJSON struct {
 	RowsAffected int64    `json:"rows_affected"`
 	Error        string   `json:"error,omitempty"`
 	TxID         string   `json:"tx_id,omitempty"`
+	NPlus1       bool     `json:"n_plus_1,omitempty"`
 }
 
 func eventToJSON(ev proxy.Event) eventJSON {
@@ -93,6 +94,7 @@ func eventToJSON(ev proxy.Event) eventJSON {
 		RowsAffected: ev.RowsAffected,
 		Error:        ev.Error,
 		TxID:         ev.TxID,
+		NPlus1:       ev.NPlus1,
 	}
 }
 

@@ -6,9 +6,22 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	tapv1 "github.com/mickamy/sql-tap/gen/tap/v1"
 	"github.com/mickamy/sql-tap/highlight"
 	"github.com/mickamy/sql-tap/proxy"
 )
+
+func eventStatus(ev *tapv1.QueryEvent) string {
+	if ev.GetError() != "" {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("1")).Render("E")
+	}
+	if ev.GetNPlus_1() {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("3")).Render("N+1")
+	}
+	return ""
+}
 
 // Column widths.
 const (
@@ -16,6 +29,7 @@ const (
 	colOp       = 9
 	colDuration = 10
 	colTime     = 12
+	colStatus   = 4
 )
 
 // txColors is a palette for coloring transaction rows.
@@ -23,7 +37,7 @@ var txColors = []lipgloss.Color{"6", "3", "5", "2", "4", "1"}
 
 func (m Model) renderList(maxRows int) string {
 	innerWidth := max(m.width-4, 20)
-	colQuery := max(innerWidth-colMarker-colOp-colDuration-colTime-3, 10)
+	colQuery := max(innerWidth-colMarker-colOp-colDuration-colTime-colStatus-4, 10)
 
 	var title string
 	if m.searchQuery != "" || m.filterQuery != "" {
@@ -56,11 +70,12 @@ func (m Model) renderList(maxRows int) string {
 	}
 	end := min(start+dataRows, len(m.displayRows))
 
-	header := fmt.Sprintf("    %-*s %-*s %*s %*s",
+	header := fmt.Sprintf("    %-*s %-*s %*s %*s %-*s",
 		colOp, "Op",
 		colQuery, "Query",
 		colDuration, "Duration",
 		colTime, "Time",
+		colStatus, "",
 	)
 
 	var rows []string
@@ -162,6 +177,8 @@ func (m Model) renderEventRow(dr displayRow, drIdx int, isCursor bool, colQuery 
 		q = "-"
 	}
 
+	status := eventStatus(ev)
+
 	if m.isTxChild(drIdx) {
 		styled := lipgloss.NewStyle().Foreground(m.txColorMap[ev.GetTxId()])
 		if isCursor {
@@ -172,7 +189,8 @@ func (m Model) renderEventRow(dr displayRow, drIdx int, isCursor bool, colQuery 
 				padRight(styled.Render(op), colOp) + " " +
 				padRight(bold.Render(q), cq) + " " +
 				padLeft(bold.Render(dur), colDuration) + " " +
-				padLeft(bold.Render(t), colTime)
+				padLeft(bold.Render(t), colTime) + " " +
+				status
 		}
 		return fmt.Sprintf("%s%s%s %-*s %*s %*s",
 			marker,
@@ -181,7 +199,7 @@ func (m Model) renderEventRow(dr displayRow, drIdx int, isCursor bool, colQuery 
 			cq, q,
 			colDuration, dur,
 			colTime, t,
-		)
+		) + " " + status
 	}
 
 	row := fmt.Sprintf("%s%s%-*s %-*s %*s %*s",
@@ -191,7 +209,7 @@ func (m Model) renderEventRow(dr displayRow, drIdx int, isCursor bool, colQuery 
 		cq, q,
 		colDuration, dur,
 		colTime, t,
-	)
+	) + " " + status
 	if isCursor {
 		row = lipgloss.NewStyle().Bold(true).Render(row)
 	}
