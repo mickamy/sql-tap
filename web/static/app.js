@@ -3,6 +3,101 @@ let selectedIdx = -1;
 let filterText = '';
 let autoScroll = true;
 
+// SQL syntax highlighting
+const SQL_KW = new Set([
+  'SELECT','FROM','WHERE','AND','OR','NOT','IN','IS','NULL','AS','ON',
+  'JOIN','LEFT','RIGHT','INNER','OUTER','CROSS','FULL','NATURAL','USING',
+  'INSERT','INTO','VALUES','UPDATE','SET','DELETE',
+  'CREATE','ALTER','DROP','TABLE','INDEX','IF','EXISTS',
+  'ORDER','BY','GROUP','HAVING','LIMIT','OFFSET',
+  'UNION','ALL','DISTINCT','BETWEEN','LIKE','ILIKE',
+  'CASE','WHEN','THEN','ELSE','END','ASC','DESC',
+  'WITH','RECURSIVE','RETURNING',
+  'BEGIN','COMMIT','ROLLBACK',
+  'EXPLAIN','ANALYZE',
+  'PRIMARY','KEY','FOREIGN','REFERENCES','CONSTRAINT',
+  'DEFAULT','CHECK','UNIQUE','CASCADE',
+  'ADD','COLUMN','RENAME','TO',
+  'TRUE','FALSE',
+  'EXCEPT','INTERSECT',
+  'FETCH','FIRST','NEXT','ROWS','ONLY',
+  'FOR','SHARE','NO','WAIT','SKIP','LOCKED',
+  'OVER','PARTITION','WINDOW',
+]);
+const SQL_FN = new Set([
+  'COUNT','SUM','AVG','MIN','MAX',
+  'COALESCE','NULLIF','CAST','NOW',
+  'CURRENT_TIMESTAMP','CURRENT_DATE','CURRENT_TIME',
+  'EXTRACT','DATE_TRUNC',
+  'LENGTH','LOWER','UPPER','TRIM','SUBSTRING','CONCAT','REPLACE',
+  'ARRAY_AGG','STRING_AGG','JSON_AGG',
+  'ROW_NUMBER','RANK','DENSE_RANK','LEAD','LAG',
+  'FIRST_VALUE','LAST_VALUE',
+  'GREATEST','LEAST','ABS','CEIL','FLOOR','ROUND','RANDOM',
+]);
+
+function highlightSQL(sql) {
+  if (!sql || sql === '-') return escapeHTML(sql || '-');
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    // String literal
+    if (sql[i] === "'") {
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === "'" && sql[j + 1] === "'") { j += 2; continue; }
+        if (sql[j] === "'") { j++; break; }
+        j++;
+      }
+      out += '<span class="sql-str">' + escapeHTML(sql.slice(i, j)) + '</span>';
+      i = j;
+      continue;
+    }
+    // Parameter $1, $2, ...
+    if (sql[i] === '$' && i + 1 < sql.length && sql[i + 1] >= '0' && sql[i + 1] <= '9') {
+      let j = i + 1;
+      while (j < sql.length && sql[j] >= '0' && sql[j] <= '9') j++;
+      out += '<span class="sql-param">' + escapeHTML(sql.slice(i, j)) + '</span>';
+      i = j;
+      continue;
+    }
+    // Parameter ?
+    if (sql[i] === '?') {
+      out += '<span class="sql-param">?</span>';
+      i++;
+      continue;
+    }
+    // Number (after whitespace, comma, paren, operator, or start)
+    if (sql[i] >= '0' && sql[i] <= '9' && (i === 0 || /[\s,=(><+\-]/.test(sql[i - 1]))) {
+      let j = i;
+      while (j < sql.length && ((sql[j] >= '0' && sql[j] <= '9') || sql[j] === '.')) j++;
+      out += '<span class="sql-num">' + escapeHTML(sql.slice(i, j)) + '</span>';
+      i = j;
+      continue;
+    }
+    // Word
+    if ((sql[i] >= 'a' && sql[i] <= 'z') || (sql[i] >= 'A' && sql[i] <= 'Z') || sql[i] === '_') {
+      let j = i;
+      while (j < sql.length && ((sql[j] >= 'a' && sql[j] <= 'z') || (sql[j] >= 'A' && sql[j] <= 'Z') || (sql[j] >= '0' && sql[j] <= '9') || sql[j] === '_')) j++;
+      const word = sql.slice(i, j);
+      const upper = word.toUpperCase();
+      if (SQL_KW.has(upper)) {
+        out += '<span class="sql-kw">' + escapeHTML(word) + '</span>';
+      } else if (SQL_FN.has(upper)) {
+        out += '<span class="sql-fn">' + escapeHTML(word) + '</span>';
+      } else {
+        out += escapeHTML(word);
+      }
+      i = j;
+      continue;
+    }
+    // Everything else
+    out += escapeHTML(sql[i]);
+    i++;
+  }
+  return out;
+}
+
 const tbody = document.getElementById('tbody');
 const tableWrap = document.getElementById('table-wrap');
 const statsEl = document.getElementById('stats');
@@ -64,7 +159,7 @@ function renderTable() {
     tr.innerHTML =
       `<td class="col-time">${escapeHTML(fmtTime(ev.start_time))}</td>` +
       `<td class="col-op">${escapeHTML(ev.op)}</td>` +
-      `<td class="col-query">${escapeHTML(ev.query || '-')}</td>` +
+      `<td class="col-query">${highlightSQL(ev.query)}</td>` +
       `<td class="col-dur">${escapeHTML(fmtDur(ev.duration_ms))}</td>` +
       `<td class="col-err">${ev.error ? 'E' : ev.n_plus_1 ? 'N+1' : ''}</td>`;
     fragment.appendChild(tr);
@@ -113,7 +208,7 @@ function selectRow(idx) {
     errRow.style.display = 'none';
   }
 
-  document.getElementById('d-query').textContent = ev.query || '-';
+  document.getElementById('d-query').innerHTML = highlightSQL(ev.query);
   document.getElementById('d-args').textContent = ev.args && ev.args.length > 0
     ? 'Args: [' + ev.args.map(a => "'" + a + "'").join(', ') + ']'
     : '';

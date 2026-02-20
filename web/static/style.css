@@ -72,7 +72,7 @@ tr.row.has-error td { color: #f44747; }
 tr.row.n-plus-1 td { color: #e5c07b; }
 
 .col-time { width: 110px; }
-.col-op { width: 70px; }
+.col-op { width: 80px; }
 .col-dur { width: 80px; text-align: right; }
 .col-err { width: 60px; }
 .col-query { overflow: hidden; text-overflow: ellipsis; }
@@ -136,6 +136,17 @@ tr.row.n-plus-1 td { color: #e5c07b; }
 }
 
 .explain-error { color: #f44747; }
+
+/* SQL syntax highlighting */
+.sql-kw { color: #569cd6; }
+.sql-fn { color: #dcdcaa; }
+.sql-str { color: #ce9178; }
+.sql-num { color: #b5cea8; }
+.sql-param { color: #9cdcfe; }
+
+/* Disable highlight colors in error / N+1 rows to keep monochrome look */
+tr.row.has-error .col-query span,
+tr.row.n-plus-1 .col-query span { color: inherit; }
 
 #toast {
   position: fixed;
