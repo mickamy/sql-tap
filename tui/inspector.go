@@ -1,17 +1,14 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/mickamy/sql-tap/clipboard"
 	"github.com/mickamy/sql-tap/explain"
 	"github.com/mickamy/sql-tap/highlight"
-	"github.com/mickamy/sql-tap/query"
 )
 
 func (m Model) updateInspect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -23,7 +20,7 @@ func (m Model) updateInspect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "q":
 		m.view = viewList
-		m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+		m = m.rebuild()
 		if m.follow {
 			m.cursor = max(len(m.displayRows)-1, 0)
 		}
@@ -32,20 +29,8 @@ func (m Model) updateInspect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startExplain(explain.Explain)
 	case "X":
 		return m.startExplain(explain.Analyze)
-	case "c":
-		ev := m.cursorEvent()
-		if ev == nil || ev.GetQuery() == "" {
-			return m, nil
-		}
-		_ = clipboard.Copy(context.Background(), ev.GetQuery())
-		return m, nil
-	case "C":
-		ev := m.cursorEvent()
-		if ev == nil || ev.GetQuery() == "" {
-			return m, nil
-		}
-		_ = clipboard.Copy(context.Background(), query.Bind(ev.GetQuery(), ev.GetArgs()))
-		return m, nil
+	case "c", "C":
+		return m.copyQuery(msg.String() == "C")
 	case "e":
 		return m.startEditExplain(explain.Explain)
 	case "E":

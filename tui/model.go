@@ -75,6 +75,11 @@ type Model struct {
 	filterCursor int
 	sortMode     sortMode
 
+	writeMode      bool
+	wroteMessage   string
+	alertSeq       int
+	pendingBracket bool
+
 	inspectScroll  int
 	explainPlan    string
 	explainErr     error
@@ -101,6 +106,15 @@ type explainResultMsg struct {
 	err  error
 }
 
+type exportResultMsg struct {
+	path string
+	err  error
+}
+
+type clearAlertMsg struct{ seq int }
+
+const alertDuration = 3 * time.Second
+
 // connectedMsg is sent after successfully establishing the gRPC Watch stream.
 type connectedMsg struct {
 	client tapv1.TapServiceClient
@@ -112,7 +126,6 @@ type connectedMsg struct {
 func New(target string) Model {
 	return Model{
 		target:    target,
-		follow:    true,
 		collapsed: make(map[string]bool),
 	}
 }
@@ -162,7 +175,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view != viewList {
 			return m, recvEvent(m.stream)
 		}
-		m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+		m = m.rebuild()
 		if m.follow {
 			m.cursor = max(len(m.displayRows)-1, 0)
 		}
@@ -200,7 +213,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.explainArgs = msg.args
 		return m, runExplain(m.client, msg.mode, msg.query, msg.args)
 
+	case exportResultMsg:
+		alertMsg := "wrote: ./" + msg.path
+		if msg.err != nil {
+			alertMsg = "write error: " + msg.err.Error()
+		}
+		m, cmd := m.showAlert(alertMsg)
+		return m, cmd
+
+	case clearAlertMsg:
+		if msg.seq == m.alertSeq {
+			m.wroteMessage = ""
+		}
+		return m, nil
+
 	case tea.KeyMsg:
+		m.wroteMessage = ""
 		switch m.view {
 		case viewInspect:
 			return m.updateInspect(msg)
@@ -234,49 +262,58 @@ func (m Model) View() string {
 		return "Waiting for queries..."
 	}
 
+	var view string
 	switch m.view {
 	case viewInspect:
-		return m.renderInspector()
+		view = m.renderInspector()
 	case viewExplain:
-		return m.renderExplain()
+		view = m.renderExplain()
 	case viewAnalytics:
-		return m.renderAnalytics()
+		view = m.renderAnalytics()
 	case viewList:
+		var footer string
+		switch {
+		case m.searchMode:
+			footer = "  / " + renderInputWithCursor(m.searchQuery, m.searchCursor)
+		case m.filterMode:
+			footer = "  filter: " + renderInputWithCursor(m.filterQuery, m.filterCursor)
+		case m.writeMode:
+			footer = "  write: [j]son [m]arkdown"
+		default:
+			items := []string{
+				"q: quit", "j/k: navigate", "space: toggle tx",
+				"enter: inspect", "a: analytics",
+				"c/C: copy", "x/X: explain",
+				"e/E: edit+explain", "/: search", "f: filter", "s: sort",
+				"w: write",
+			}
+			footer = wrapFooterItems(items, m.width)
+			if m.filterQuery != "" {
+				footer += "\n  " + fmt.Sprintf("[filter: %s]", describeFilter(m.filterQuery))
+			}
+			if m.searchQuery != "" || m.filterQuery != "" {
+				footer += "  esc: clear"
+			}
+			if m.sortMode == sortDuration {
+				footer += "  [sorted: duration]"
+			}
+		}
+
+		footerLines := strings.Count(footer, "\n") + 1
+		listHeight := m.listHeight(footerLines)
+
+		view = strings.Join([]string{
+			m.renderList(listHeight),
+			m.renderPreview(),
+			footer,
+		}, "\n")
 	}
 
-	var footer string
-	switch {
-	case m.searchMode:
-		footer = "  / " + renderInputWithCursor(m.searchQuery, m.searchCursor)
-	case m.filterMode:
-		footer = "  filter: " + renderInputWithCursor(m.filterQuery, m.filterCursor)
-	default:
-		items := []string{
-			"q: quit", "j/k: navigate", "space: toggle tx",
-			"enter: inspect", "a: analytics",
-			"c/C: copy", "x/X: explain",
-			"e/E: edit+explain", "/: search", "f: filter", "s: sort",
-		}
-		footer = wrapFooterItems(items, m.width)
-		if m.filterQuery != "" {
-			footer += "\n  " + fmt.Sprintf("[filter: %s]", describeFilter(m.filterQuery))
-		}
-		if m.searchQuery != "" || m.filterQuery != "" {
-			footer += "  esc: clear"
-		}
-		if m.sortMode == sortDuration {
-			footer += "  [sorted: duration]"
-		}
+	if m.wroteMessage != "" {
+		view = overlayAlert(view, m.wroteMessage, m.width)
 	}
 
-	footerLines := strings.Count(footer, "\n") + 1
-	listHeight := m.listHeight(footerLines)
-
-	return strings.Join([]string{
-		m.renderList(listHeight),
-		m.renderPreview(),
-		footer,
-	}, "\n")
+	return view
 }
 
 func (m Model) listHeight(footerLines int) int {
@@ -284,6 +321,12 @@ func (m Model) listHeight(footerLines int) int {
 	// Adjust by extra footer lines beyond the default 1.
 	extra := max(footerLines-1, 0)
 	return max(m.height-12-extra, 3)
+}
+
+// rebuild wraps rebuildDisplayRows for convenience.
+func (m Model) rebuild() Model {
+	m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+	return m
 }
 
 func (m Model) rebuildDisplayRows() ([]displayRow, map[string]lipgloss.Color) {
@@ -467,6 +510,9 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.filterMode {
 		return m.updateFilter(msg)
 	}
+	if m.writeMode {
+		return m.updateWrite(msg)
+	}
 
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -485,7 +531,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e", "E":
 		return m.startEditExplain(explainModeFromKey(msg.String()))
 	case "c", "C":
-		return m.copyQuery(msg.String() == "C"), nil
+		return m.copyQuery(msg.String() == "C")
 	case "/":
 		m.searchMode = true
 		m.searchQuery = ""
@@ -495,6 +541,9 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterMode = true
 		m.filterQuery = ""
 		m.filterCursor = 0
+		return m, nil
+	case "w":
+		m.writeMode = true
 		return m, nil
 	case "s":
 		return m.toggleSort(), nil
@@ -520,11 +569,15 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		m.searchMode = false
+		m.pendingBracket = false
+		m = m.rebuild()
+		m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 		return m, nil
 	case "esc":
 		m.searchMode = false
 		m.searchQuery = ""
-		m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+		m.pendingBracket = false
+		m = m.rebuild()
 		m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 		return m, nil
 	case "backspace":
@@ -532,7 +585,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			runes := []rune(m.searchQuery)
 			m.searchQuery = string(runes[:m.searchCursor-1]) + string(runes[m.searchCursor:])
 			m.searchCursor--
-			m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+			m = m.rebuild()
 			m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 		}
 		return m, nil
@@ -555,8 +608,12 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.navigateCursor(msg.String()), nil
 	}
 
-	// Ignore non-printable keys.
-	r := msg.Runes
+	if len(msg.Runes) == 0 {
+		return m, nil
+	}
+
+	var r []rune
+	m, r = m.filterInputRunes(msg.Runes)
 	if len(r) == 0 {
 		return m, nil
 	}
@@ -564,7 +621,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	runes := []rune(m.searchQuery)
 	m.searchQuery = string(runes[:m.searchCursor]) + string(r) + string(runes[m.searchCursor:])
 	m.searchCursor += len(r)
-	m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+	m = m.rebuild()
 	m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 	return m, nil
 }
@@ -573,11 +630,15 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		m.filterMode = false
+		m.pendingBracket = false
+		m = m.rebuild()
+		m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 		return m, nil
 	case "esc":
 		m.filterMode = false
 		m.filterQuery = ""
-		m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+		m.pendingBracket = false
+		m = m.rebuild()
 		m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 		return m, nil
 	case "backspace":
@@ -585,7 +646,7 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			runes := []rune(m.filterQuery)
 			m.filterQuery = string(runes[:m.filterCursor-1]) + string(runes[m.filterCursor:])
 			m.filterCursor--
-			m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+			m = m.rebuild()
 			m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 		}
 		return m, nil
@@ -608,8 +669,12 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.navigateCursor(msg.String()), nil
 	}
 
-	// Ignore non-printable keys.
-	r := msg.Runes
+	if len(msg.Runes) == 0 {
+		return m, nil
+	}
+
+	var r []rune
+	m, r = m.filterInputRunes(msg.Runes)
 	if len(r) == 0 {
 		return m, nil
 	}
@@ -617,9 +682,33 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	runes := []rune(m.filterQuery)
 	m.filterQuery = string(runes[:m.filterCursor]) + string(r) + string(runes[m.filterCursor:])
 	m.filterCursor += len(r)
-	m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+	m = m.rebuild()
 	m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 	return m, nil
+}
+
+func (m Model) updateWrite(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.writeMode = false
+	switch msg.String() {
+	case "j":
+		return m, m.runExport(exportJSON)
+	case "m":
+		return m, m.runExport(exportMarkdown)
+	}
+	return m, nil
+}
+
+func (m Model) runExport(format exportFormat) tea.Cmd {
+	events := make([]*tapv1.QueryEvent, len(m.events))
+	copy(events, m.events)
+	filterQuery := m.filterQuery
+	searchQuery := m.searchQuery
+	return func() tea.Msg {
+		path, err := writeExport(
+			events, filterQuery, searchQuery, format, "",
+		)
+		return exportResultMsg{path: path, err: err}
+	}
 }
 
 func (m Model) toggleTx() Model {
@@ -628,7 +717,7 @@ func (m Model) toggleTx() Model {
 		return m
 	}
 	m.collapsed[txID] = !m.collapsed[txID]
-	m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+	m = m.rebuild()
 	for i, r := range m.displayRows {
 		if r.kind == rowTxSummary && r.txID == txID {
 			m.cursor = i
@@ -671,17 +760,61 @@ func (m Model) navigateCursor(key string) Model {
 	return m
 }
 
-func (m Model) copyQuery(withArgs bool) Model {
+// filterInputRunes works around a bubbletea v1 limitation where arrow-key
+// escape sequences (ESC [ A/B/C/D/F/H) can be split across read() calls.
+// When that happens, ESC is consumed as KeyEscape and the remaining bytes
+// arrive as rune input ("[D", etc.). This filter buffers a standalone "["
+// and discards it together with a following CSI final byte, preventing
+// garbage characters from being inserted into search/filter text.
+//
+// Limitation: the literal two-character sequence "[A", "[B", "[C", "[D",
+// "[F", or "[H" cannot be typed in search/filter input.
+func (m Model) filterInputRunes(r []rune) (Model, []rune) {
+	// "[D" arrived as a single batch of runes.
+	if len(r) >= 2 && r[0] == '[' {
+		m.pendingBracket = false
+		return m, nil
+	}
+	// Previous event was a standalone "["; check if this is a CSI final byte.
+	if m.pendingBracket {
+		m.pendingBracket = false
+		if len(r) == 1 {
+			switch r[0] {
+			case 'A', 'B', 'C', 'D', 'F', 'H':
+				return m, nil
+			}
+		}
+		// Not a CSI byte — emit the buffered "[" plus current runes.
+		return m, append([]rune{'['}, r...)
+	}
+	// Buffer a standalone "[" to check the next event.
+	if len(r) == 1 && r[0] == '[' {
+		m.pendingBracket = true
+		return m, nil
+	}
+	return m, r
+}
+
+func (m Model) copyQuery(withArgs bool) (Model, tea.Cmd) {
 	ev := m.cursorEvent()
 	if ev == nil || ev.GetQuery() == "" {
-		return m
+		return m, nil
 	}
 	text := ev.GetQuery()
 	if withArgs {
 		text = query.Bind(text, ev.GetArgs())
 	}
 	_ = clipboard.Copy(context.Background(), text)
-	return m
+	return m.showAlert("copied!")
+}
+
+func (m Model) showAlert(msg string) (Model, tea.Cmd) {
+	m.alertSeq++
+	m.wroteMessage = msg
+	seq := m.alertSeq
+	return m, tea.Tick(alertDuration, func(time.Time) tea.Msg {
+		return clearAlertMsg{seq: seq}
+	})
 }
 
 func (m Model) toggleSort() Model {
@@ -692,7 +825,7 @@ func (m Model) toggleSort() Model {
 	case sortDuration:
 		m.sortMode = sortChronological
 	}
-	m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+	m = m.rebuild()
 	m.cursor = 0
 	return m
 }
@@ -717,7 +850,7 @@ func (m Model) clearFilter() Model {
 		changed = true
 	}
 	if changed {
-		m.displayRows, m.txColorMap = m.rebuildDisplayRows()
+		m = m.rebuild()
 		m.cursor = min(m.cursor, max(len(m.displayRows)-1, 0))
 	}
 	return m

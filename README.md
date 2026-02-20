@@ -128,26 +128,27 @@ Flags:
 
 ### List view
 
-| Key               | Action                               |
-|-------------------|--------------------------------------|
-| `j` / `↓`         | Move down                            |
-| `k` / `↑`         | Move up                              |
-| `Ctrl+d` / `PgDn` | Half-page down                       |
-| `Ctrl+u` / `PgUp` | Half-page up                         |
-| `/`               | Incremental text search              |
-| `f`               | Structured filter (see below)        |
-| `s`               | Toggle sort (chronological/duration) |
-| `Enter`           | Inspect query / transaction          |
-| `Space`           | Toggle transaction expand / collapse |
-| `Esc`             | Clear search / filter                |
-| `x`               | EXPLAIN                              |
-| `X`               | EXPLAIN ANALYZE                      |
-| `e`               | Edit query, then EXPLAIN             |
-| `E`               | Edit query, then EXPLAIN ANALYZE     |
-| `a`               | Analytics view                       |
-| `c`               | Copy query                           |
-| `C`               | Copy query with bound args           |
-| `q`               | Quit                                 |
+| Key               | Action                                 |
+|-------------------|----------------------------------------|
+| `j` / `↓`         | Move down                              |
+| `k` / `↑`         | Move up                                |
+| `Ctrl+d` / `PgDn` | Half-page down                         |
+| `Ctrl+u` / `PgUp` | Half-page up                           |
+| `/`               | Incremental text search                |
+| `f`               | Structured filter (see below)          |
+| `s`               | Toggle sort (chronological/duration)   |
+| `Enter`           | Inspect query / transaction            |
+| `Space`           | Toggle transaction expand / collapse   |
+| `Esc`             | Clear search / filter                  |
+| `x`               | EXPLAIN                                |
+| `X`               | EXPLAIN ANALYZE                        |
+| `e`               | Edit query, then EXPLAIN               |
+| `E`               | Edit query, then EXPLAIN ANALYZE       |
+| `a`               | Analytics view                         |
+| `c`               | Copy query                             |
+| `C`               | Copy query with bound args             |
+| `w`               | Export queries to file (JSON/Markdown) |
+| `q`               | Quit                                   |
 
 ### Inspector view
 
@@ -210,6 +211,14 @@ op:select d>100ms
 This shows only SELECT queries that took longer than 100ms.
 
 Both `/` (text search) and `f` (filter) can be active simultaneously — the filter is applied first, then the text search narrows the results further.
+
+## Known limitations
+
+### Arrow key input in search / filter mode
+
+Due to a limitation in the terminal input parser used by [Bubble Tea](https://github.com/charmbracelet/bubbletea) v1, multi-byte escape sequences (such as arrow keys: ESC `[` A/B/C/D) can occasionally be split across OS-level `read()` calls. When this happens, the remaining bytes (`[A`, `[B`, `[C`, `[D`, `[F`, `[H`) would appear as garbage text in the input field.
+
+sql-tap includes a workaround that detects and discards these split sequences. As a side effect, the literal two-character strings `[A`, `[B`, `[C`, `[D`, `[F`, and `[H` cannot be typed in search or filter input. This is unlikely to affect real-world usage since these patterns rarely appear in SQL queries.
 
 ## How it works
 
