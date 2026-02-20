@@ -126,7 +126,6 @@ type connectedMsg struct {
 func New(target string) Model {
 	return Model{
 		target:    target,
-		follow:    true,
 		collapsed: make(map[string]bool),
 	}
 }
