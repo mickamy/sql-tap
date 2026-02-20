@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +22,7 @@ const (
 	analyticsSortTotalDuration analyticsSortMode = iota
 	analyticsSortCount
 	analyticsSortAvgDuration
+	analyticsSortP95Duration
 )
 
 func (s analyticsSortMode) String() string {
@@ -30,6 +33,8 @@ func (s analyticsSortMode) String() string {
 		return "count"
 	case analyticsSortAvgDuration:
 		return "avg"
+	case analyticsSortP95Duration:
+		return "p95"
 	}
 	return "total"
 }
@@ -41,6 +46,8 @@ func (s analyticsSortMode) next() analyticsSortMode {
 	case analyticsSortCount:
 		return analyticsSortAvgDuration
 	case analyticsSortAvgDuration:
+		return analyticsSortP95Duration
+	case analyticsSortP95Duration:
 		return analyticsSortTotalDuration
 	}
 	return analyticsSortTotalDuration
@@ -51,12 +58,15 @@ type analyticsRow struct {
 	count         int
 	totalDuration time.Duration
 	avgDuration   time.Duration
+	p95Duration   time.Duration
+	maxDuration   time.Duration
 }
 
 func (m Model) buildAnalyticsRows() []analyticsRow {
 	type agg struct {
-		count    int
-		totalDur time.Duration
+		count     int
+		totalDur  time.Duration
+		durations []time.Duration
 	}
 	groups := make(map[string]*agg)
 
@@ -67,30 +77,43 @@ func (m Model) buildAnalyticsRows() []analyticsRow {
 		case proxy.OpQuery, proxy.OpExec, proxy.OpExecute:
 		}
 
-		q := ev.GetQuery()
-		if q == "" {
+		nq := ev.GetNormalizedQuery()
+		if nq == "" {
 			continue
 		}
 
-		g, ok := groups[q]
+		dur := ev.GetDuration().AsDuration()
+		g, ok := groups[nq]
 		if !ok {
 			g = &agg{}
-			groups[q] = g
+			groups[nq] = g
 		}
 		g.count++
-		g.totalDur += ev.GetDuration().AsDuration()
+		g.totalDur += dur
+		g.durations = append(g.durations, dur)
 	}
 
 	rows := make([]analyticsRow, 0, len(groups))
 	for q, g := range groups {
+		slices.SortFunc(g.durations, cmp.Compare)
 		rows = append(rows, analyticsRow{
 			query:         q,
 			count:         g.count,
 			totalDuration: g.totalDur,
 			avgDuration:   g.totalDur / time.Duration(g.count),
+			p95Duration:   percentile(g.durations, 0.95),
+			maxDuration:   g.durations[len(g.durations)-1],
 		})
 	}
 	return rows
+}
+
+func percentile(sorted []time.Duration, p float64) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+	idx := int(float64(len(sorted)-1) * p)
+	return sorted[idx]
 }
 
 func sortAnalyticsRows(rows []analyticsRow, mode analyticsSortMode) {
@@ -102,6 +125,8 @@ func sortAnalyticsRows(rows []analyticsRow, mode analyticsSortMode) {
 			return rows[i].count > rows[j].count
 		case analyticsSortAvgDuration:
 			return rows[i].avgDuration > rows[j].avgDuration
+		case analyticsSortP95Duration:
+			return rows[i].p95Duration > rows[j].p95Duration
 		}
 		return rows[i].totalDuration > rows[j].totalDuration
 	})
@@ -171,6 +196,8 @@ const (
 	analyticsColMarker = 2  // "▶ " or "  "
 	analyticsColCount  = 7  // "  Count" right-aligned
 	analyticsColAvg    = 10 // "       Avg" right-aligned
+	analyticsColP95    = 10 // "       P95" right-aligned
+	analyticsColMax    = 10 // "       Max" right-aligned
 	analyticsColTotal  = 10 // "     Total" right-aligned
 )
 
@@ -179,9 +206,11 @@ func (m Model) analyticsVisibleRows() int {
 }
 
 func (m Model) analyticsMaxLineWidth() int {
+	fixedCols := analyticsColMarker + analyticsColCount + analyticsColAvg +
+		analyticsColP95 + analyticsColMax + analyticsColTotal + 6
 	maxW := 0
 	for _, r := range m.analyticsRows {
-		w := analyticsColMarker + analyticsColCount + analyticsColAvg + analyticsColTotal + 4 + len([]rune(r.query))
+		w := fixedCols + len([]rune(r.query))
 		if w > maxW {
 			maxW = w
 		}
@@ -195,12 +224,16 @@ func (m Model) renderAnalytics() string {
 
 	title := fmt.Sprintf(" Analytics (%d templates) [sort: %s] ", len(m.analyticsRows), m.analyticsSortMode)
 
-	// 4 = separator spaces: count" "avg" "total"  "query
-	colQuery := max(innerWidth-analyticsColMarker-analyticsColCount-analyticsColAvg-analyticsColTotal-4, 10)
+	// 6 = separator spaces between columns
+	fixedWidth := analyticsColMarker + analyticsColCount + analyticsColAvg +
+		analyticsColP95 + analyticsColMax + analyticsColTotal + 6
+	colQuery := max(innerWidth-fixedWidth, 10)
 
-	header := fmt.Sprintf("  %*s %*s %*s  %s",
+	header := fmt.Sprintf("  %*s %*s %*s %*s %*s  %s",
 		analyticsColCount, "Count",
 		analyticsColAvg, "Avg",
+		analyticsColP95, "P95",
+		analyticsColMax, "Max",
 		analyticsColTotal, "Total",
 		"Query",
 	)
@@ -238,10 +271,12 @@ func (m Model) renderAnalytics() string {
 			q = string([]rune(q)[:colQuery-1]) + "…"
 		}
 
-		row := fmt.Sprintf("%s%*d %*s %*s  %s",
+		row := fmt.Sprintf("%s%*d %*s %*s %*s %*s  %s",
 			marker,
 			analyticsColCount, r.count,
 			analyticsColAvg, formatDurationValue(r.avgDuration),
+			analyticsColP95, formatDurationValue(r.p95Duration),
+			analyticsColMax, formatDurationValue(r.maxDuration),
 			analyticsColTotal, formatDurationValue(r.totalDuration),
 			q,
 		)

@@ -28,6 +28,21 @@ header .status { margin-left: auto; font-size: 12px; }
 header .status.connected { color: #4ec9b0; }
 header .status.disconnected { color: #f44747; }
 
+.tab-group { display: flex; gap: 2px; }
+.tab-btn {
+  background: #3c3c3c;
+  border: 1px solid #555;
+  color: #888;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tab-btn:first-child { border-radius: 3px 0 0 3px; }
+.tab-btn:last-child { border-radius: 0 3px 3px 0; }
+.tab-btn.active { background: #007acc; color: #fff; border-color: #007acc; }
+.tab-btn:hover:not(.active) { background: #505050; }
+
 #filter {
   background: #3c3c3c;
   border: 1px solid #555;
@@ -42,6 +57,7 @@ header .status.disconnected { color: #f44747; }
 #filter:focus { outline: none; border-color: #007acc; }
 
 #table-wrap { flex: 1; overflow-y: auto; min-height: 0; }
+#stats-wrap { flex: 1; overflow-y: auto; min-height: 0; }
 
 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 
@@ -56,6 +72,10 @@ th {
   font-size: 12px;
   white-space: nowrap;
 }
+
+th.sortable { cursor: pointer; }
+th.sortable:hover { color: #d4d4d4; }
+th.sortable.active { color: #4ec9b0; }
 
 td {
   padding: 4px 8px;
@@ -77,6 +97,10 @@ tr.row.n-plus-1 td { color: #e5c07b; }
 .col-err { width: 60px; }
 .col-query { overflow: hidden; text-overflow: ellipsis; }
 
+.stats-col-count { width: 70px; text-align: right; }
+.stats-col-dur { width: 80px; text-align: right; }
+.stats-col-query { overflow: hidden; text-overflow: ellipsis; }
+
 #detail {
   border-top: 1px solid #3c3c3c;
   background: #252526;
@@ -87,6 +111,17 @@ tr.row.n-plus-1 td { color: #e5c07b; }
 
 #detail.open { display: block; }
 #detail-content { padding: 12px 16px; }
+
+#stats-detail {
+  border-top: 1px solid #3c3c3c;
+  background: #252526;
+  max-height: 45vh;
+  overflow-y: auto;
+  display: none;
+}
+
+#stats-detail.open { display: block; }
+#stats-detail-content { padding: 12px 16px; }
 
 .detail-row { margin-bottom: 4px; }
 .detail-label { color: #888; display: inline-block; width: 80px; }

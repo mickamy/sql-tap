@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,6 +33,8 @@ type exportAnalyticsRow struct {
 	Count   int     `json:"count"`
 	TotalMs float64 `json:"total_ms"`
 	AvgMs   float64 `json:"avg_ms"`
+	P95Ms   float64 `json:"p95_ms"`
+	MaxMs   float64 `json:"max_ms"`
 }
 
 type exportQuery struct {
@@ -74,8 +78,9 @@ func filteredEvents(
 // buildExportAnalytics aggregates query metrics from the given events.
 func buildExportAnalytics(events []*tapv1.QueryEvent) []exportAnalyticsRow {
 	type agg struct {
-		count    int
-		totalDur time.Duration
+		count     int
+		totalDur  time.Duration
+		durations []time.Duration
 	}
 	groups := make(map[string]*agg)
 	var order []string
@@ -87,30 +92,37 @@ func buildExportAnalytics(events []*tapv1.QueryEvent) []exportAnalyticsRow {
 			continue
 		case proxy.OpQuery, proxy.OpExec, proxy.OpExecute:
 		}
-		q := ev.GetQuery()
-		if q == "" {
+		nq := ev.GetNormalizedQuery()
+		if nq == "" {
 			continue
 		}
-		g, ok := groups[q]
+		dur := ev.GetDuration().AsDuration()
+		g, ok := groups[nq]
 		if !ok {
 			g = &agg{}
-			groups[q] = g
-			order = append(order, q)
+			groups[nq] = g
+			order = append(order, nq)
 		}
 		g.count++
-		g.totalDur += ev.GetDuration().AsDuration()
+		g.totalDur += dur
+		g.durations = append(g.durations, dur)
 	}
 
 	rows := make([]exportAnalyticsRow, 0, len(groups))
 	for _, q := range order {
 		g := groups[q]
+		slices.SortFunc(g.durations, cmp.Compare)
 		totalMs := float64(g.totalDur.Microseconds()) / 1000
 		avgMs := totalMs / float64(g.count)
+		p95Ms := float64(percentile(g.durations, 0.95).Microseconds()) / 1000
+		maxMs := float64(g.durations[len(g.durations)-1].Microseconds()) / 1000
 		rows = append(rows, exportAnalyticsRow{
 			Query:   q,
 			Count:   g.count,
 			TotalMs: totalMs,
 			AvgMs:   avgMs,
+			P95Ms:   p95Ms,
+			MaxMs:   maxMs,
 		})
 	}
 	return rows
@@ -217,14 +229,16 @@ func renderMarkdown(
 
 	if len(d.Analytics) > 0 {
 		sb.WriteString("\n## Analytics\n\n")
-		sb.WriteString("| Query | Count | Total | Avg |\n")
-		sb.WriteString("|-------|-------|-------|-----|\n")
+		sb.WriteString("| Query | Count | Avg | P95 | Max | Total |\n")
+		sb.WriteString("|-------|-------|-----|-----|-----|-------|\n")
 		for _, a := range d.Analytics {
-			fmt.Fprintf(&sb, "| %s | %d | %s | %s |\n",
+			fmt.Fprintf(&sb, "| %s | %d | %s | %s | %s | %s |\n",
 				escapeMarkdownPipe(a.Query),
 				a.Count,
-				formatDurationMs(a.TotalMs),
 				formatDurationMs(a.AvgMs),
+				formatDurationMs(a.P95Ms),
+				formatDurationMs(a.MaxMs),
+				formatDurationMs(a.TotalMs),
 			)
 		}
 	}

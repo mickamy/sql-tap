@@ -2,6 +2,10 @@ const events = [];
 let selectedIdx = -1;
 let filterText = '';
 let autoScroll = true;
+let viewMode = 'events';
+let statsSortKey = 'total';
+let statsSortAsc = false;
+let selectedStatsQuery = null;
 
 // SQL syntax highlighting
 const SQL_KW = new Set([
@@ -100,21 +104,64 @@ function highlightSQL(sql) {
 
 const tbody = document.getElementById('tbody');
 const tableWrap = document.getElementById('table-wrap');
+const statsWrap = document.getElementById('stats-wrap');
+const statsTbody = document.getElementById('stats-tbody');
 const statsEl = document.getElementById('stats');
 const statusEl = document.getElementById('status');
 const filterEl = document.getElementById('filter');
 const detailEl = document.getElementById('detail');
+const statsDetailEl = document.getElementById('stats-detail');
 const explainOutput = document.getElementById('explain-output');
 
 filterEl.addEventListener('input', () => {
   filterText = filterEl.value.toLowerCase();
-  renderTable();
+  render();
 });
 
 tableWrap.addEventListener('scroll', () => {
   const el = tableWrap;
   autoScroll = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
 });
+
+// Stats sort header clicks
+document.querySelectorAll('#stats-wrap th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (statsSortKey === key) {
+      statsSortAsc = !statsSortAsc;
+    } else {
+      statsSortKey = key;
+      statsSortAsc = false;
+    }
+    document.querySelectorAll('#stats-wrap th.sortable').forEach(h => h.classList.remove('active'));
+    th.classList.add('active');
+    renderStats();
+  });
+});
+
+function switchView(mode) {
+  viewMode = mode;
+  document.getElementById('tab-events').classList.toggle('active', mode === 'events');
+  document.getElementById('tab-stats').classList.toggle('active', mode === 'stats');
+  tableWrap.style.display = mode === 'events' ? '' : 'none';
+  statsWrap.style.display = mode === 'stats' ? '' : 'none';
+  if (mode === 'events') {
+    detailEl.className = selectedIdx >= 0 ? 'open' : '';
+    statsDetailEl.className = '';
+  } else {
+    detailEl.className = '';
+    statsDetailEl.className = selectedStatsQuery ? 'open' : '';
+  }
+  render();
+}
+
+function render() {
+  if (viewMode === 'events') {
+    renderTable();
+  } else {
+    renderStats();
+  }
+}
 
 function getFiltered() {
   if (!filterText) return events.map((ev, i) => ({ev, idx: i}));
@@ -168,6 +215,95 @@ function renderTable() {
 
   if (autoScroll && selectedIdx < 0) {
     tableWrap.scrollTop = tableWrap.scrollHeight;
+  }
+}
+
+// --- Stats view ---
+
+function buildStats() {
+  const groups = {};
+  const skipOps = new Set(['Begin', 'Commit', 'Rollback', 'Bind', 'Prepare']);
+  for (const ev of events) {
+    if (skipOps.has(ev.op)) continue;
+    const nq = ev.normalized_query;
+    if (!nq) continue;
+    if (filterText && !nq.toLowerCase().includes(filterText)) continue;
+    if (!groups[nq]) groups[nq] = {query: nq, durations: []};
+    groups[nq].durations.push(ev.duration_ms);
+  }
+  const rows = [];
+  for (const key in groups) {
+    const g = groups[key];
+    const durs = g.durations.sort((a, b) => a - b);
+    const count = durs.length;
+    const total = durs.reduce((s, d) => s + d, 0);
+    const avg = total / count;
+    const p95 = durs[Math.floor((count - 1) * 0.95)];
+    const mx = durs[count - 1];
+    rows.push({query: g.query, count, avg, p95, max: mx, total});
+  }
+  return rows;
+}
+
+function sortStats(rows) {
+  const dir = statsSortAsc ? 1 : -1;
+  rows.sort((a, b) => {
+    const va = a[statsSortKey];
+    const vb = b[statsSortKey];
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  });
+}
+
+function renderStats() {
+  const rows = buildStats();
+  sortStats(rows);
+  statsEl.textContent = `${rows.length} templates`;
+
+  const fragment = document.createDocumentFragment();
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    tr.className = 'row' + (selectedStatsQuery === r.query ? ' selected' : '');
+    tr.onclick = () => selectStatsRow(r);
+    tr.innerHTML =
+      `<td class="stats-col-count">${r.count}</td>` +
+      `<td class="stats-col-dur">${fmtDur(r.avg)}</td>` +
+      `<td class="stats-col-dur">${fmtDur(r.p95)}</td>` +
+      `<td class="stats-col-dur">${fmtDur(r.max)}</td>` +
+      `<td class="stats-col-dur">${fmtDur(r.total)}</td>` +
+      `<td class="stats-col-query" title="${escapeHTML(r.query)}">${highlightSQL(r.query)}</td>`;
+    fragment.appendChild(tr);
+  }
+  statsTbody.replaceChildren(fragment);
+}
+
+function selectStatsRow(r) {
+  if (selectedStatsQuery === r.query) {
+    selectedStatsQuery = null;
+    statsDetailEl.className = '';
+    renderStats();
+    return;
+  }
+  selectedStatsQuery = r.query;
+
+  document.getElementById('sd-metrics').innerHTML =
+    `<span class="detail-label">Count:</span><span class="detail-value">${r.count}</span>` +
+    `<span class="detail-label" style="margin-left:12px">Avg:</span><span class="detail-value">${fmtDur(r.avg)}</span>` +
+    `<span class="detail-label" style="margin-left:12px">P95:</span><span class="detail-value">${fmtDur(r.p95)}</span>` +
+    `<span class="detail-label" style="margin-left:12px">Max:</span><span class="detail-value">${fmtDur(r.max)}</span>` +
+    `<span class="detail-label" style="margin-left:12px">Total:</span><span class="detail-value">${fmtDur(r.total)}</span>`;
+  document.getElementById('sd-query').innerHTML = highlightSQL(r.query);
+  statsDetailEl.className = 'open';
+  renderStats();
+}
+
+function copyStatsQuery() {
+  if (!selectedStatsQuery) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(selectedStatsQuery).then(() => showToast('Copied!')).catch(() => fallbackCopy(selectedStatsQuery));
+  } else {
+    fallbackCopy(selectedStatsQuery);
   }
 }
 
@@ -315,7 +451,7 @@ function connectSSE() {
     if (ev.n_plus_1) {
       showToast('N+1 detected: ' + (ev.query || '').substring(0, 80));
     }
-    renderTable();
+    render();
   };
   es.onerror = () => {
     statusEl.textContent = 'disconnected';

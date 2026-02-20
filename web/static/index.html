@@ -11,6 +11,10 @@
   <header>
     <h1>sql-tap</h1>
     <span class="stats" id="stats">0 queries</span>
+    <div class="tab-group">
+      <button class="tab-btn active" id="tab-events" onclick="switchView('events')">Events</button>
+      <button class="tab-btn" id="tab-stats" onclick="switchView('stats')">Stats</button>
+    </div>
     <input type="text" id="filter" placeholder="Filter queries...">
     <span class="status disconnected" id="status">connecting...</span>
   </header>
@@ -26,6 +30,21 @@
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div id="stats-wrap" style="display:none">
+    <table>
+      <thead>
+        <tr>
+          <th class="stats-col-count sortable" data-sort="count">Count</th>
+          <th class="stats-col-dur sortable" data-sort="avg">Avg</th>
+          <th class="stats-col-dur sortable" data-sort="p95">P95</th>
+          <th class="stats-col-dur sortable" data-sort="max">Max</th>
+          <th class="stats-col-dur sortable" data-sort="total">Total</th>
+          <th class="stats-col-query">Query</th>
+        </tr>
+      </thead>
+      <tbody id="stats-tbody"></tbody>
     </table>
   </div>
   <div id="detail">
@@ -47,6 +66,16 @@
       </div>
       <div id="explain-output">
         <pre id="explain-pre"></pre>
+      </div>
+    </div>
+  </div>
+  <div id="stats-detail">
+    <div id="stats-detail-content">
+      <div class="detail-row" id="sd-metrics"></div>
+      <div class="detail-row"><span class="detail-label">Query:</span></div>
+      <div class="detail-query" id="sd-query"></div>
+      <div class="detail-buttons">
+        <button class="btn" onclick="copyStatsQuery()">Copy Query</button>
       </div>
     </div>
   </div>

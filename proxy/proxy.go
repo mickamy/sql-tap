@@ -44,16 +44,17 @@ func (o Op) String() string {
 
 // Event represents a captured database query event.
 type Event struct {
-	ID           string
-	Op           Op
-	Query        string
-	Args         []string
-	StartTime    time.Time
-	Duration     time.Duration
-	RowsAffected int64
-	Error        string
-	TxID         string
-	NPlus1       bool
+	ID              string
+	Op              Op
+	Query           string
+	Args            []string
+	StartTime       time.Time
+	Duration        time.Duration
+	RowsAffected    int64
+	Error           string
+	TxID            string
+	NPlus1          bool
+	NormalizedQuery string
 }
 
 // Proxy is the common interface for DB protocol proxies.
