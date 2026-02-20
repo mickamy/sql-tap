@@ -106,6 +106,9 @@ Flags:
   -grpc      gRPC server address for TUI (default: ":9091")
   -http      HTTP server address for web UI (e.g. ":8080")
   -dsn-env   env var holding DSN for EXPLAIN (default: "DATABASE_URL")
+  -nplus1-threshold  N+1 detection threshold (default: 5, 0 to disable)
+  -nplus1-window     N+1 detection time window (default: 1s)
+  -nplus1-cooldown   N+1 alert cooldown per query template (default: 10s)
   -version   show version and exit
 ```
 
@@ -128,6 +131,7 @@ Open `http://localhost:8080` in your browser to view queries in real-time. The w
 - EXPLAIN / EXPLAIN ANALYZE
 - Text filter
 - Copy query (with or without bound args)
+- N+1 detection (toast + row highlight)
 
 ### sql-tap
 
@@ -230,6 +234,33 @@ op:select d>100ms
 This shows only SELECT queries that took longer than 100ms.
 
 Both `/` (text search) and `f` (filter) can be active simultaneously — the filter is applied first, then the text search narrows the results further.
+
+## N+1 query detection
+
+sql-tap automatically detects N+1 query patterns — when the same SELECT template is executed many times in a short time window.
+
+Detection is enabled by default and runs server-side, so both TUI and Web UI benefit:
+
+- **TUI**: alert overlay on first detection + `N+1` marker in the Status column for every flagged query
+- **Web UI**: toast notification on first detection + yellow row highlight + `N+1` in the Status column
+
+### Configuration
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--nplus1-threshold` | `5` | Number of executions to trigger detection (0 to disable) |
+| `--nplus1-window` | `1s` | Sliding time window for counting |
+| `--nplus1-cooldown` | `10s` | Minimum interval between alert notifications for the same query |
+
+Only SELECT queries are monitored. INSERT, UPDATE, DELETE, and transaction lifecycle commands (BEGIN, COMMIT, etc.) are excluded.
+
+Once the threshold is crossed, all subsequent executions of the same template within the window are flagged. The cooldown only affects the notification frequency — the Status column marker always appears.
+
+To disable detection entirely:
+
+```bash
+sql-tapd --nplus1-threshold=0 ...
+```
 
 ## Known limitations
 
