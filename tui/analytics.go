@@ -181,7 +181,7 @@ func (m Model) analyticsVisibleRows() int {
 func (m Model) analyticsMaxLineWidth() int {
 	maxW := 0
 	for _, r := range m.analyticsRows {
-		w := analyticsColMarker + analyticsColCount + analyticsColAvg + analyticsColTotal + 3 + len([]rune(r.query))
+		w := analyticsColMarker + analyticsColCount + analyticsColAvg + analyticsColTotal + 4 + len([]rune(r.query))
 		if w > maxW {
 			maxW = w
 		}
@@ -195,7 +195,8 @@ func (m Model) renderAnalytics() string {
 
 	title := fmt.Sprintf(" Analytics (%d templates) [sort: %s] ", len(m.analyticsRows), m.analyticsSortMode)
 
-	colQuery := max(innerWidth-analyticsColMarker-analyticsColCount-analyticsColAvg-analyticsColTotal-3, 10)
+	// 4 = separator spaces: count" "avg" "total"  "query
+	colQuery := max(innerWidth-analyticsColMarker-analyticsColCount-analyticsColAvg-analyticsColTotal-4, 10)
 
 	header := fmt.Sprintf("  %*s %*s %*s  %s",
 		analyticsColCount, "Count",
