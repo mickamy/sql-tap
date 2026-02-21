@@ -3,6 +3,9 @@ name: Release
 on:
   workflow_call:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
