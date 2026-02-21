@@ -221,19 +221,22 @@ function renderTable() {
 // --- Stats view ---
 
 function buildStats() {
-  const groups = {};
+  const groups = new Map();
   const skipOps = new Set(['Begin', 'Commit', 'Rollback', 'Bind', 'Prepare']);
   for (const ev of events) {
     if (skipOps.has(ev.op)) continue;
     const nq = ev.normalized_query;
     if (!nq) continue;
     if (filterText && !nq.toLowerCase().includes(filterText)) continue;
-    if (!groups[nq]) groups[nq] = {query: nq, durations: []};
-    groups[nq].durations.push(ev.duration_ms);
+    let group = groups.get(nq);
+    if (!group) {
+      group = {query: nq, durations: []};
+      groups.set(nq, group);
+    }
+    group.durations.push(ev.duration_ms);
   }
   const rows = [];
-  for (const key in groups) {
-    const g = groups[key];
+  for (const g of groups.values()) {
     const durs = g.durations.sort((a, b) => a - b);
     const count = durs.length;
     const total = durs.reduce((s, d) => s + d, 0);

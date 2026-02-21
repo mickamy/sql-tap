@@ -119,7 +119,7 @@ func eventToProto(ev proxy.Event) *tapv1.QueryEvent {
 		Error:           sanitizeUTF8(ev.Error),
 		TxId:            ev.TxID,
 		NPlus_1:         ev.NPlus1,
-		NormalizedQuery: ev.NormalizedQuery,
+		NormalizedQuery: sanitizeUTF8(ev.NormalizedQuery),
 	}
 }
 
