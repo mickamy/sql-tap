@@ -59,6 +59,7 @@ type Model struct {
 	events      []*tapv1.QueryEvent
 	cursor      int // index into displayRows
 	follow      bool
+	paused      bool
 	width       int
 	height      int
 	err         error
@@ -171,6 +172,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, recvEvent(msg.stream)
 
 	case eventMsg:
+		if m.paused {
+			return m, recvEvent(m.stream)
+		}
+
 		m.events = append(m.events, msg.Event)
 
 		if msg.Event.GetNPlus_1() || msg.Event.GetSlowQuery() {
@@ -306,9 +311,12 @@ func (m Model) View() string {
 				"enter: inspect", "a: analytics",
 				"c/C: copy", "x/X: explain",
 				"e/E: edit+explain", "/: search", "f: filter", "s: sort",
-				"w: write",
+				"w: write", "p: pause", "ctrl+l: clear",
 			}
 			footer = wrapFooterItems(items, m.width)
+			if m.paused {
+				footer += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true).Render("[PAUSED]")
+			}
 			if m.filterQuery != "" {
 				footer += "\n  " + fmt.Sprintf("[filter: %s]", describeFilter(m.filterQuery))
 			}
@@ -568,6 +576,15 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "s":
 		return m.toggleSort(), nil
+	case "p":
+		m.paused = !m.paused
+		return m, nil
+	case "ctrl+l":
+		m.events = nil
+		m.displayRows = nil
+		m.cursor = 0
+		m.collapsed = make(map[string]bool)
+		return m, nil
 	case "a":
 		return m.enterAnalytics(), nil
 	case "esc":

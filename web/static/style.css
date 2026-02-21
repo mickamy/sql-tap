@@ -43,6 +43,20 @@ header .status.disconnected { color: #f44747; }
 .tab-btn.active { background: #007acc; color: #fff; border-color: #007acc; }
 .tab-btn:hover:not(.active) { background: #505050; }
 
+.control-group { display: flex; gap: 2px; }
+.ctrl-btn {
+  background: #3c3c3c;
+  border: 1px solid #555;
+  color: #888;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.ctrl-btn:hover { background: #505050; }
+.ctrl-btn.active { background: #e5c07b; color: #1e1e1e; border-color: #e5c07b; }
+
 #filter {
   background: #3c3c3c;
   border: 1px solid #555;

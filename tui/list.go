@@ -55,6 +55,9 @@ func (m Model) renderList(maxRows int) string {
 	} else {
 		title = fmt.Sprintf(" sql-tap (%d queries) ", len(m.events))
 	}
+	if m.paused {
+		title += "[PAUSED] "
+	}
 	if m.sortMode == sortDuration {
 		title += "[slow] "
 	}
