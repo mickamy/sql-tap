@@ -114,7 +114,7 @@ const statsDetailEl = document.getElementById('stats-detail');
 const explainOutput = document.getElementById('explain-output');
 
 filterEl.addEventListener('input', () => {
-  filterText = filterEl.value.toLowerCase();
+  filterText = filterEl.value;
   render();
 });
 
@@ -163,13 +163,60 @@ function render() {
   }
 }
 
+// Filter parsing (matches TUI filter.go syntax)
+const RE_DURATION = /^d([><])(\d+(?:\.\d+)?)(us|µs|ms|s|m)$/;
+const OP_KEYWORDS = new Set(['select', 'insert', 'update', 'delete']);
+const PROTOCOL_OPS = new Set(['query', 'exec', 'prepare', 'bind', 'execute', 'begin', 'commit', 'rollback']);
+
+function parseFilterTokens(input) {
+  if (!input.trim()) return [];
+  const tokens = input.trim().split(/\s+/);
+  return tokens.map(tok => {
+    const dm = RE_DURATION.exec(tok);
+    if (dm) {
+      const op = dm[1];
+      const val = parseFloat(dm[2]);
+      const unit = dm[3];
+      let ms;
+      switch (unit) {
+        case 'us': case 'µs': ms = val / 1000; break;
+        case 'ms': ms = val; break;
+        case 's': ms = val * 1000; break;
+        case 'm': ms = val * 60000; break;
+        default: ms = val;
+      }
+      return {kind: 'duration', op, ms};
+    }
+    if (tok.toLowerCase() === 'error') return {kind: 'error'};
+    const lower = tok.toLowerCase();
+    if (lower.startsWith('op:') && lower.length > 3) return {kind: 'op', pattern: lower.slice(3)};
+    return {kind: 'text', text: lower};
+  });
+}
+
+function matchesFilter(ev, cond) {
+  switch (cond.kind) {
+    case 'duration':
+      return cond.op === '>' ? ev.duration_ms > cond.ms : ev.duration_ms < cond.ms;
+    case 'error':
+      return !!ev.error;
+    case 'op':
+      if (PROTOCOL_OPS.has(cond.pattern)) return ev.op.toLowerCase() === cond.pattern;
+      if (OP_KEYWORDS.has(cond.pattern)) return (ev.query || '').trim().toLowerCase().startsWith(cond.pattern);
+      return false;
+    case 'text':
+      return (ev.query || '').toLowerCase().includes(cond.text) ||
+             ev.op.toLowerCase().includes(cond.text) ||
+             (ev.error && ev.error.toLowerCase().includes(cond.text));
+  }
+  return false;
+}
+
 function getFiltered() {
-  if (!filterText) return events.map((ev, i) => ({ev, idx: i}));
+  const conds = parseFilterTokens(filterText);
+  if (conds.length === 0) return events.map((ev, i) => ({ev, idx: i}));
   return events.reduce((acc, ev, i) => {
-    if (ev.query.toLowerCase().includes(filterText) ||
-        ev.op.toLowerCase().includes(filterText) ||
-        (ev.error && ev.error.toLowerCase().includes(filterText)))
-      acc.push({ev, idx: i});
+    if (conds.every(c => matchesFilter(ev, c))) acc.push({ev, idx: i});
     return acc;
   }, []);
 }
@@ -224,11 +271,12 @@ function renderTable() {
 function buildStats() {
   const groups = new Map();
   const skipOps = new Set(['Begin', 'Commit', 'Rollback', 'Bind', 'Prepare']);
+  const textConds = parseFilterTokens(filterText).filter(c => c.kind === 'text');
   for (const ev of events) {
     if (skipOps.has(ev.op)) continue;
     const nq = ev.normalized_query;
     if (!nq) continue;
-    if (filterText && !nq.toLowerCase().includes(filterText)) continue;
+    if (textConds.length > 0 && !textConds.every(c => nq.toLowerCase().includes(c.text))) continue;
     let group = groups.get(nq);
     if (!group) {
       group = {query: nq, durations: []};
