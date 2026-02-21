@@ -735,7 +735,7 @@ function renderExportMarkdown(data) {
   md += `- Captured: ${data.captured} queries\n`;
   let exportLine = `- Exported: ${data.exported} queries`;
   if (data.filter) {
-    exportLine += ` (filter: ${data.filter})`;
+    exportLine += ` (filter: ${escPipe(data.filter)})`;
   }
   md += exportLine + '\n';
   if (data.period.start) {
@@ -747,7 +747,7 @@ function renderExportMarkdown(data) {
   md += '|---|------|----|----------|-------|------|-------|\n';
   data.queries.forEach((q, i) => {
     const args = q.args.length > 0
-      ? '[' + q.args.map(a => "'" + a + "'").join(', ') + ']'
+      ? '[' + q.args.map(a => "'" + escPipe(a) + "'").join(', ') + ']'
       : '';
     md += `| ${i + 1} | ${q.time} | ${q.op} | ${fmtDurExport(q.duration_ms)} | ${escPipe(q.query)} | ${args} | ${escPipe(q.error)} |\n`;
   });
@@ -774,8 +774,10 @@ function downloadBlob(content, filename) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 // SSE
