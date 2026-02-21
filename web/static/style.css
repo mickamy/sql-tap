@@ -194,6 +194,27 @@ tr.row.slow-query td { color: #c678dd; }
 .sql-num { color: #b5cea8; }
 .sql-param { color: #9cdcfe; }
 
+/* Transaction grouping */
+tr.row.tx-summary td { color: #4ec9b0; font-weight: 600; }
+tr.row.tx-child .col-time { padding-left: 24px; }
+.tx-chevron { cursor: pointer; margin-right: 4px; }
+
+/* Tx color palette (6 colors, applied to col-op) */
+tr.row[data-tx-color="0"] .col-op { color: #4ec9b0; }
+tr.row[data-tx-color="1"] .col-op { color: #e5c07b; }
+tr.row[data-tx-color="2"] .col-op { color: #c678dd; }
+tr.row[data-tx-color="3"] .col-op { color: #61afef; }
+tr.row[data-tx-color="4"] .col-op { color: #e06c75; }
+tr.row[data-tx-color="5"] .col-op { color: #98c379; }
+
+/* Summary row uses its tx color for all cells */
+tr.row.tx-summary[data-tx-color="0"] td { color: #4ec9b0; }
+tr.row.tx-summary[data-tx-color="1"] td { color: #e5c07b; }
+tr.row.tx-summary[data-tx-color="2"] td { color: #c678dd; }
+tr.row.tx-summary[data-tx-color="3"] td { color: #61afef; }
+tr.row.tx-summary[data-tx-color="4"] td { color: #e06c75; }
+tr.row.tx-summary[data-tx-color="5"] td { color: #98c379; }
+
 /* Disable highlight colors in error / N+1 / slow rows to keep monochrome look */
 tr.row.has-error .col-query span,
 tr.row.n-plus-1 .col-query span,

@@ -7,6 +7,7 @@ let statsSortKey = 'total';
 let statsSortAsc = false;
 let selectedStatsQuery = null;
 let paused = false;
+const collapsedTx = new Set();
 
 // SQL syntax highlighting
 const SQL_KW = new Set([
@@ -245,27 +246,120 @@ function escapeHTML(s) {
   return el.innerHTML;
 }
 
+const TX_SKIP_OPS = new Set(['Begin', 'Commit', 'Rollback', 'Bind', 'Prepare']);
+
+function buildDisplayRows() {
+  const conds = parseFilterTokens(filterText);
+  const hasFilter = conds.length > 0;
+
+  // With filter active → flat list (current behavior)
+  if (hasFilter) {
+    const filtered = getFiltered();
+    return filtered.map(({ev, idx}) => ({kind: 'event', eventIdx: idx}));
+  }
+
+  // No filter → group by tx
+  const rows = [];
+  const seenTx = new Set();
+
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    const txId = ev.tx_id;
+
+    if (txId && ev.op === 'Begin' && !seenTx.has(txId)) {
+      seenTx.add(txId);
+      // Collect all events with this txId
+      const indices = [];
+      for (let j = 0; j < events.length; j++) {
+        if (events[j].tx_id === txId) indices.push(j);
+      }
+      rows.push({kind: 'tx', txId, eventIndices: indices});
+      if (!collapsedTx.has(txId)) {
+        for (const j of indices) {
+          rows.push({kind: 'event', eventIdx: j});
+        }
+      }
+    } else if (txId && seenTx.has(txId)) {
+      // Already handled by summary — skip
+    } else {
+      rows.push({kind: 'event', eventIdx: i});
+    }
+  }
+  return rows;
+}
+
+function txSummaryInfo(indices) {
+  const queryCount = indices.filter(i => !TX_SKIP_OPS.has(events[i].op)).length;
+  const first = events[indices[0]];
+  const last = events[indices[indices.length - 1]];
+  const startMs = new Date(first.start_time).getTime();
+  const endMs = new Date(last.start_time).getTime() + last.duration_ms;
+  const durationMs = endMs - startMs;
+  return {queryCount, durationMs, time: first.start_time};
+}
+
+let txColorMap = new Map();
+let txColorCounter = 0;
+
+function getTxColor(txId) {
+  if (!txColorMap.has(txId)) {
+    txColorMap.set(txId, txColorCounter % 6);
+    txColorCounter++;
+  }
+  return txColorMap.get(txId);
+}
+
 function renderTable() {
-  const filtered = getFiltered();
+  const displayRows = buildDisplayRows();
+  const hasFilter = parseFilterTokens(filterText).length > 0;
   const pauseLabel = paused ? ' (paused)' : '';
-  statsEl.textContent = filterText
-    ? `${filtered.length}/${events.length} queries${pauseLabel}`
-    : `${events.length} queries${pauseLabel}`;
+  const eventCount = hasFilter
+    ? displayRows.length + '/' + events.length
+    : String(events.length);
+  statsEl.textContent = `${eventCount} queries${pauseLabel}`;
 
   const fragment = document.createDocumentFragment();
-  for (const {ev, idx} of filtered) {
-    const tr = document.createElement('tr');
-    tr.className = 'row' + (idx === selectedIdx ? ' selected' : '') + (ev.error ? ' has-error' : '') + (ev.n_plus_1 ? ' n-plus-1' : '') + (ev.slow_query ? ' slow-query' : '');
-    tr.dataset.idx = idx;
-    tr.onclick = () => selectRow(idx);
-    const status = ev.error ? 'E' : ev.n_plus_1 ? 'N+1' : ev.slow_query ? 'SLOW' : '';
-    tr.innerHTML =
-      `<td class="col-time">${escapeHTML(fmtTime(ev.start_time))}</td>` +
-      `<td class="col-op">${escapeHTML(ev.op)}</td>` +
-      `<td class="col-query">${highlightSQL(ev.query)}</td>` +
-      `<td class="col-dur">${escapeHTML(fmtDur(ev.duration_ms))}</td>` +
-      `<td class="col-err">${status}</td>`;
-    fragment.appendChild(tr);
+  for (const row of displayRows) {
+    if (row.kind === 'tx') {
+      const info = txSummaryInfo(row.eventIndices);
+      const collapsed = collapsedTx.has(row.txId);
+      const chevron = collapsed ? '\u25b8' : '\u25be';
+      const colorIdx = getTxColor(row.txId);
+      const tr = document.createElement('tr');
+      tr.className = 'row tx-summary';
+      tr.dataset.txColor = colorIdx;
+      tr.onclick = () => toggleTx(row.txId);
+      tr.innerHTML =
+        `<td class="col-time"><span class="tx-chevron">${chevron}</span>${escapeHTML(fmtTime(info.time))}</td>` +
+        `<td class="col-op">Tx</td>` +
+        `<td class="col-query">${info.queryCount} queries</td>` +
+        `<td class="col-dur">${escapeHTML(fmtDur(info.durationMs))}</td>` +
+        `<td class="col-err"></td>`;
+      fragment.appendChild(tr);
+    } else {
+      const idx = row.eventIdx;
+      const ev = events[idx];
+      const colorIdx = ev.tx_id ? getTxColor(ev.tx_id) : undefined;
+      const isTxChild = !hasFilter && ev.tx_id;
+      const tr = document.createElement('tr');
+      tr.className = 'row' +
+        (isTxChild ? ' tx-child' : '') +
+        (idx === selectedIdx ? ' selected' : '') +
+        (ev.error ? ' has-error' : '') +
+        (ev.n_plus_1 ? ' n-plus-1' : '') +
+        (ev.slow_query ? ' slow-query' : '');
+      if (colorIdx !== undefined) tr.dataset.txColor = colorIdx;
+      tr.dataset.idx = idx;
+      tr.onclick = () => selectRow(idx);
+      const status = ev.error ? 'E' : ev.n_plus_1 ? 'N+1' : ev.slow_query ? 'SLOW' : '';
+      tr.innerHTML =
+        `<td class="col-time">${escapeHTML(fmtTime(ev.start_time))}</td>` +
+        `<td class="col-op">${escapeHTML(ev.op)}</td>` +
+        `<td class="col-query">${highlightSQL(ev.query)}</td>` +
+        `<td class="col-dur">${escapeHTML(fmtDur(ev.duration_ms))}</td>` +
+        `<td class="col-err">${status}</td>`;
+      fragment.appendChild(tr);
+    }
   }
   tbody.replaceChildren(fragment);
 
@@ -365,6 +459,15 @@ function copyStatsQuery() {
   } else {
     fallbackCopy(selectedStatsQuery);
   }
+}
+
+function toggleTx(txId) {
+  if (collapsedTx.has(txId)) {
+    collapsedTx.delete(txId);
+  } else {
+    collapsedTx.add(txId);
+  }
+  render();
 }
 
 function selectRow(idx) {
@@ -510,6 +613,9 @@ function clearEvents() {
   events.length = 0;
   selectedIdx = -1;
   selectedStatsQuery = null;
+  collapsedTx.clear();
+  txColorMap = new Map();
+  txColorCounter = 0;
   detailEl.className = '';
   statsDetailEl.className = '';
   render();
