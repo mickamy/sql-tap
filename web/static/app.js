@@ -6,6 +6,7 @@ let viewMode = 'events';
 let statsSortKey = 'total';
 let statsSortAsc = false;
 let selectedStatsQuery = null;
+let paused = false;
 
 // SQL syntax highlighting
 const SQL_KW = new Set([
@@ -155,12 +156,18 @@ function switchView(mode) {
   render();
 }
 
+let renderPending = false;
 function render() {
-  if (viewMode === 'events') {
-    renderTable();
-  } else {
-    renderStats();
-  }
+  if (renderPending) return;
+  renderPending = true;
+  requestAnimationFrame(() => {
+    renderPending = false;
+    if (viewMode === 'events') {
+      renderTable();
+    } else {
+      renderStats();
+    }
+  });
 }
 
 // Filter parsing (matches TUI filter.go syntax)
@@ -240,9 +247,10 @@ function escapeHTML(s) {
 
 function renderTable() {
   const filtered = getFiltered();
+  const pauseLabel = paused ? ' (paused)' : '';
   statsEl.textContent = filterText
-    ? `${filtered.length}/${events.length} queries`
-    : `${events.length} queries`;
+    ? `${filtered.length}/${events.length} queries${pauseLabel}`
+    : `${events.length} queries${pauseLabel}`;
 
   const fragment = document.createDocumentFragment();
   for (const {ev, idx} of filtered) {
@@ -490,6 +498,23 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2000);
 }
 
+function togglePause() {
+  paused = !paused;
+  const btn = document.getElementById('btn-pause');
+  btn.textContent = paused ? 'Resume' : 'Pause';
+  btn.classList.toggle('active', paused);
+  render();
+}
+
+function clearEvents() {
+  events.length = 0;
+  selectedIdx = -1;
+  selectedStatsQuery = null;
+  detailEl.className = '';
+  statsDetailEl.className = '';
+  render();
+}
+
 // SSE
 function connectSSE() {
   const es = new EventSource('/api/events');
@@ -498,6 +523,7 @@ function connectSSE() {
     statusEl.className = 'status connected';
   };
   es.onmessage = (e) => {
+    if (paused) return;
     const ev = JSON.parse(e.data);
     events.push(ev);
     if (ev.n_plus_1) {
