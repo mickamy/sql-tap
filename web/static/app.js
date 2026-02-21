@@ -200,15 +200,16 @@ function renderTable() {
   const fragment = document.createDocumentFragment();
   for (const {ev, idx} of filtered) {
     const tr = document.createElement('tr');
-    tr.className = 'row' + (idx === selectedIdx ? ' selected' : '') + (ev.error ? ' has-error' : '') + (ev.n_plus_1 ? ' n-plus-1' : '');
+    tr.className = 'row' + (idx === selectedIdx ? ' selected' : '') + (ev.error ? ' has-error' : '') + (ev.n_plus_1 ? ' n-plus-1' : '') + (ev.slow_query ? ' slow-query' : '');
     tr.dataset.idx = idx;
     tr.onclick = () => selectRow(idx);
+    const status = ev.error ? 'E' : ev.n_plus_1 ? 'N+1' : ev.slow_query ? 'SLOW' : '';
     tr.innerHTML =
       `<td class="col-time">${escapeHTML(fmtTime(ev.start_time))}</td>` +
       `<td class="col-op">${escapeHTML(ev.op)}</td>` +
       `<td class="col-query">${highlightSQL(ev.query)}</td>` +
       `<td class="col-dur">${escapeHTML(fmtDur(ev.duration_ms))}</td>` +
-      `<td class="col-err">${ev.error ? 'E' : ev.n_plus_1 ? 'N+1' : ''}</td>`;
+      `<td class="col-err">${status}</td>`;
     fragment.appendChild(tr);
   }
   tbody.replaceChildren(fragment);
@@ -453,6 +454,8 @@ function connectSSE() {
     events.push(ev);
     if (ev.n_plus_1) {
       showToast('N+1 detected: ' + (ev.query || '').substring(0, 80));
+    } else if (ev.slow_query) {
+      showToast('Slow query: ' + (ev.query || '').substring(0, 80));
     }
     render();
   };

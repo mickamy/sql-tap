@@ -17,6 +17,7 @@ message QueryEvent {
   string tx_id = 9;
   bool n_plus_1 = 10;
   string normalized_query = 11;
+  bool slow_query = 12;
 }
 
 message WatchRequest {}

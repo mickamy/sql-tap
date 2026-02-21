@@ -46,6 +46,7 @@ func main() {
 	nplus1Threshold := fs.Int("nplus1-threshold", 5, "N+1 detection threshold (0 to disable)")
 	nplus1Window := fs.Duration("nplus1-window", time.Second, "N+1 detection time window")
 	nplus1Cooldown := fs.Duration("nplus1-cooldown", 10*time.Second, "N+1 alert cooldown per query template")
+	slowThreshold := fs.Duration("slow-threshold", 100*time.Millisecond, "slow query threshold (0 to disable)")
 	showVersion := fs.Bool("version", false, "show version and exit")
 
 	_ = fs.Parse(os.Args[1:])
@@ -62,7 +63,7 @@ func main() {
 
 	err := run(
 		*driver, *listen, *upstream, *grpcAddr, *dsnEnv, *httpAddr,
-		*nplus1Threshold, *nplus1Window, *nplus1Cooldown,
+		*nplus1Threshold, *nplus1Window, *nplus1Cooldown, *slowThreshold,
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -71,7 +72,7 @@ func main() {
 
 func run(
 	driver, listen, upstream, grpcAddr, dsnEnv, httpAddr string,
-	nplus1Threshold int, nplus1Window, nplus1Cooldown time.Duration,
+	nplus1Threshold int, nplus1Window, nplus1Cooldown, slowThreshold time.Duration,
 ) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -155,6 +156,10 @@ func run(
 			nplus1Threshold, nplus1Window, nplus1Cooldown)
 	}
 
+	if slowThreshold > 0 {
+		log.Printf("slow query detection enabled (threshold=%s)", slowThreshold)
+	}
+
 	go func() {
 		for ev := range p.Events() {
 			if ev.Query != "" {
@@ -167,6 +172,9 @@ func run(
 					log.Printf("N+1 detected: %q (%d times in %s)",
 						r.Alert.Query, r.Alert.Count, nplus1Window)
 				}
+			}
+			if slowThreshold > 0 && ev.Duration >= slowThreshold {
+				ev.SlowQuery = true
 			}
 			b.Publish(ev)
 		}

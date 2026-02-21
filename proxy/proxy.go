@@ -54,6 +54,7 @@ type Event struct {
 	Error           string
 	TxID            string
 	NPlus1          bool
+	SlowQuery       bool
 	NormalizedQuery string
 }
 

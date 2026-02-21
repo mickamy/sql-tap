@@ -36,6 +36,7 @@ type QueryEvent struct {
 	TxId            string                 `protobuf:"bytes,9,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
 	NPlus_1         bool                   `protobuf:"varint,10,opt,name=n_plus_1,json=nPlus1,proto3" json:"n_plus_1,omitempty"`
 	NormalizedQuery string                 `protobuf:"bytes,11,opt,name=normalized_query,json=normalizedQuery,proto3" json:"normalized_query,omitempty"`
+	SlowQuery       bool                   `protobuf:"varint,12,opt,name=slow_query,json=slowQuery,proto3" json:"slow_query,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -145,6 +146,13 @@ func (x *QueryEvent) GetNormalizedQuery() string {
 		return x.NormalizedQuery
 	}
 	return ""
+}
+
+func (x *QueryEvent) GetSlowQuery() bool {
+	if x != nil {
+		return x.SlowQuery
+	}
+	return false
 }
 
 type WatchRequest struct {
@@ -335,7 +343,7 @@ var File_tap_v1_tap_proto protoreflect.FileDescriptor
 
 const file_tap_v1_tap_proto_rawDesc = "" +
 	"\n" +
-	"\x10tap/v1/tap.proto\x12\x06tap.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/duration.proto\"\xdd\x02\n" +
+	"\x10tap/v1/tap.proto\x12\x06tap.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/duration.proto\"\xfc\x02\n" +
 	"\n" +
 	"QueryEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x0e\n" +
@@ -350,7 +358,9 @@ const file_tap_v1_tap_proto_rawDesc = "" +
 	"\x05tx_id\x18\t \x01(\tR\x04txId\x12\x18\n" +
 	"\bn_plus_1\x18\n" +
 	" \x01(\bR\x06nPlus1\x12)\n" +
-	"\x10normalized_query\x18\v \x01(\tR\x0fnormalizedQuery\"\x0e\n" +
+	"\x10normalized_query\x18\v \x01(\tR\x0fnormalizedQuery\x12\x1d\n" +
+	"\n" +
+	"slow_query\x18\f \x01(\bR\tslowQuery\"\x0e\n" +
 	"\fWatchRequest\"9\n" +
 	"\rWatchResponse\x12(\n" +
 	"\x05event\x18\x01 \x01(\v2\x12.tap.v1.QueryEventR\x05event\"T\n" +
