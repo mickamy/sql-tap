@@ -311,7 +311,7 @@ function getTxColor(txId) {
 
 function renderTable() {
   const displayRows = buildDisplayRows();
-  const hasFilter = parseFilterTokens(filterText).length > 0;
+  const hasFilter = filterText.trim().length > 0;
   const pauseLabel = paused ? ' (paused)' : '';
   const eventCount = hasFilter
     ? displayRows.length + '/' + events.length
