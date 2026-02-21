@@ -55,6 +55,7 @@ header .status.disconnected { color: #f44747; }
   border-radius: 3px;
 }
 .ctrl-btn:hover { background: #505050; }
+.export-group { display: flex; gap: 2px; }
 .ctrl-btn.active { background: #e5c07b; color: #1e1e1e; border-color: #e5c07b; }
 
 #filter {

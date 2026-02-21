@@ -636,6 +636,148 @@ function clearEvents() {
   render();
 }
 
+// --- Export ---
+
+function exportData(format) {
+  const data = buildExportData();
+  const content = format === 'json' ? renderExportJSON(data) : renderExportMarkdown(data);
+  const ext = format === 'json' ? 'json' : 'md';
+  const now = new Date();
+  const ts = now.getFullYear().toString() +
+    String(now.getMonth() + 1).padStart(2, '0') +
+    String(now.getDate()).padStart(2, '0') + '-' +
+    String(now.getHours()).padStart(2, '0') +
+    String(now.getMinutes()).padStart(2, '0') +
+    String(now.getSeconds()).padStart(2, '0');
+  downloadBlob(content, `sql-tap-${ts}.${ext}`);
+}
+
+function buildExportData() {
+  const filtered = getFiltered();
+  const exported = filtered.map(f => f.ev);
+
+  let periodStart = '';
+  let periodEnd = '';
+  if (exported.length > 0) {
+    periodStart = fmtTimeHMS(exported[0].start_time);
+    periodEnd = fmtTimeHMS(exported[exported.length - 1].start_time);
+  }
+
+  const queries = exported.map(ev => ({
+    time: fmtTime(ev.start_time),
+    op: ev.op,
+    query: ev.query || '',
+    args: ev.args || [],
+    duration_ms: ev.duration_ms,
+    rows_affected: ev.rows_affected || 0,
+    error: ev.error || '',
+    tx_id: ev.tx_id || '',
+  }));
+
+  return {
+    captured: events.length,
+    exported: exported.length,
+    filter: filterText,
+    search: '',
+    period: {start: periodStart, end: periodEnd},
+    queries,
+    analytics: buildExportAnalytics(exported),
+  };
+}
+
+function fmtTimeHMS(iso) {
+  const d = new Date(iso);
+  return String(d.getHours()).padStart(2, '0') + ':' +
+    String(d.getMinutes()).padStart(2, '0') + ':' +
+    String(d.getSeconds()).padStart(2, '0');
+}
+
+function buildExportAnalytics(exported) {
+  const skipOps = new Set(['Begin', 'Commit', 'Rollback', 'Bind', 'Prepare']);
+  const groups = new Map();
+  const order = [];
+  for (const ev of exported) {
+    if (skipOps.has(ev.op)) continue;
+    const nq = ev.normalized_query;
+    if (!nq) continue;
+    let g = groups.get(nq);
+    if (!g) {
+      g = {durations: []};
+      groups.set(nq, g);
+      order.push(nq);
+    }
+    g.durations.push(ev.duration_ms);
+  }
+  return order.map(q => {
+    const g = groups.get(q);
+    const durs = g.durations.slice().sort((a, b) => a - b);
+    const count = durs.length;
+    const total = durs.reduce((s, d) => s + d, 0);
+    const avg = total / count;
+    const p95 = durs[Math.floor((count - 1) * 0.95)];
+    const mx = durs[count - 1];
+    return {query: q, count, total_ms: total, avg_ms: avg, p95_ms: p95, max_ms: mx};
+  });
+}
+
+function fmtDurExport(ms) {
+  if (ms < 1) return Math.round(ms * 1000) + '\u00b5s';
+  if (ms < 1000) return ms.toFixed(1) + 'ms';
+  return (ms / 1000).toFixed(2) + 's';
+}
+
+function renderExportJSON(data) {
+  return JSON.stringify(data, null, '  ') + '\n';
+}
+
+function renderExportMarkdown(data) {
+  let md = '# sql-tap export\n\n';
+  md += `- Captured: ${data.captured} queries\n`;
+  let exportLine = `- Exported: ${data.exported} queries`;
+  if (data.filter) {
+    exportLine += ` (filter: ${data.filter})`;
+  }
+  md += exportLine + '\n';
+  if (data.period.start) {
+    md += `- Period: ${data.period.start} \u2014 ${data.period.end}\n`;
+  }
+
+  md += '\n## Queries\n\n';
+  md += '| # | Time | Op | Duration | Query | Args | Error |\n';
+  md += '|---|------|----|----------|-------|------|-------|\n';
+  data.queries.forEach((q, i) => {
+    const args = q.args.length > 0
+      ? '[' + q.args.map(a => "'" + a + "'").join(', ') + ']'
+      : '';
+    md += `| ${i + 1} | ${q.time} | ${q.op} | ${fmtDurExport(q.duration_ms)} | ${escPipe(q.query)} | ${args} | ${escPipe(q.error)} |\n`;
+  });
+
+  if (data.analytics.length > 0) {
+    md += '\n## Analytics\n\n';
+    md += '| Query | Count | Avg | P95 | Max | Total |\n';
+    md += '|-------|-------|-----|-----|-----|-------|\n';
+    for (const a of data.analytics) {
+      md += `| ${escPipe(a.query)} | ${a.count} | ${fmtDurExport(a.avg_ms)} | ${fmtDurExport(a.p95_ms)} | ${fmtDurExport(a.max_ms)} | ${fmtDurExport(a.total_ms)} |\n`;
+    }
+  }
+
+  return md;
+}
+
+function escPipe(s) {
+  return (s || '').replace(/\|/g, '\\|');
+}
+
+function downloadBlob(content, filename) {
+  const blob = new Blob([content], {type: 'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // SSE
 function connectSSE() {
   const es = new EventSource('/api/events');
