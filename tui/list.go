@@ -20,6 +20,10 @@ func eventStatus(ev *tapv1.QueryEvent) string {
 		return lipgloss.NewStyle().
 			Foreground(lipgloss.Color("3")).Render("N+1")
 	}
+	if ev.GetSlowQuery() {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("5")).Render("SLOW")
+	}
 	return ""
 }
 

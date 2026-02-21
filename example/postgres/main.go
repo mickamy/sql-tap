@@ -55,6 +55,10 @@ func run() error {
 		if i%3 == 0 {
 			doNPlus1(ctx, db, i)
 		}
+		// Occasionally simulate slow query.
+		if i%5 == 0 {
+			doSlowQuery(ctx, db)
+		}
 
 		select {
 		case <-ctx.Done():
@@ -205,6 +209,11 @@ func doNPlus1(ctx context.Context, db *sql.DB, i int) {
 		).Scan(&name)
 	}
 	fmt.Printf("[%d] N+1 simulation done (10 individual SELECTs)\n", i)
+}
+
+func doSlowQuery(ctx context.Context, db *sql.DB) {
+	_, _ = db.ExecContext(ctx, "SELECT pg_sleep(0.15)")
+	fmt.Println("slow query simulation done (150ms sleep)")
 }
 
 func doLongQuery(ctx context.Context, db *sql.DB, i int) {

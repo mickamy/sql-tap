@@ -90,6 +90,7 @@ tr.row:hover { background: #2a2d2e; }
 tr.row.selected { background: #094771; }
 tr.row.has-error td { color: #f44747; }
 tr.row.n-plus-1 td { color: #e5c07b; }
+tr.row.slow-query td { color: #c678dd; }
 
 .col-time { width: 110px; }
 .col-op { width: 80px; }
@@ -179,9 +180,10 @@ tr.row.n-plus-1 td { color: #e5c07b; }
 .sql-num { color: #b5cea8; }
 .sql-param { color: #9cdcfe; }
 
-/* Disable highlight colors in error / N+1 rows to keep monochrome look */
+/* Disable highlight colors in error / N+1 / slow rows to keep monochrome look */
 tr.row.has-error .col-query span,
-tr.row.n-plus-1 .col-query span { color: inherit; }
+tr.row.n-plus-1 .col-query span,
+tr.row.slow-query .col-query span { color: inherit; }
 
 #toast {
   position: fixed;

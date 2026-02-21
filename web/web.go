@@ -79,6 +79,7 @@ type eventJSON struct {
 	Error           string   `json:"error,omitempty"`
 	TxID            string   `json:"tx_id,omitempty"`
 	NPlus1          bool     `json:"n_plus_1,omitempty"`
+	SlowQuery       bool     `json:"slow_query,omitempty"`
 	NormalizedQuery string   `json:"normalized_query,omitempty"`
 }
 
@@ -96,6 +97,7 @@ func eventToJSON(ev proxy.Event) eventJSON {
 		Error:           ev.Error,
 		TxID:            ev.TxID,
 		NPlus1:          ev.NPlus1,
+		SlowQuery:       ev.SlowQuery,
 		NormalizedQuery: ev.NormalizedQuery,
 	}
 }
