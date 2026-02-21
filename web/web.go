@@ -69,32 +69,34 @@ func (s *Server) Handler() http.Handler {
 }
 
 type eventJSON struct {
-	ID           string   `json:"id"`
-	Op           string   `json:"op"`
-	Query        string   `json:"query"`
-	Args         []string `json:"args"`
-	StartTime    string   `json:"start_time"`
-	DurationMs   float64  `json:"duration_ms"`
-	RowsAffected int64    `json:"rows_affected"`
-	Error        string   `json:"error,omitempty"`
-	TxID         string   `json:"tx_id,omitempty"`
-	NPlus1       bool     `json:"n_plus_1,omitempty"`
+	ID              string   `json:"id"`
+	Op              string   `json:"op"`
+	Query           string   `json:"query"`
+	Args            []string `json:"args"`
+	StartTime       string   `json:"start_time"`
+	DurationMs      float64  `json:"duration_ms"`
+	RowsAffected    int64    `json:"rows_affected"`
+	Error           string   `json:"error,omitempty"`
+	TxID            string   `json:"tx_id,omitempty"`
+	NPlus1          bool     `json:"n_plus_1,omitempty"`
+	NormalizedQuery string   `json:"normalized_query,omitempty"`
 }
 
 func eventToJSON(ev proxy.Event) eventJSON {
 	args := make([]string, len(ev.Args))
 	copy(args, ev.Args)
 	return eventJSON{
-		ID:           ev.ID,
-		Op:           ev.Op.String(),
-		Query:        ev.Query,
-		Args:         args,
-		StartTime:    ev.StartTime.Format(time.RFC3339Nano),
-		DurationMs:   float64(ev.Duration.Microseconds()) / 1000,
-		RowsAffected: ev.RowsAffected,
-		Error:        ev.Error,
-		TxID:         ev.TxID,
-		NPlus1:       ev.NPlus1,
+		ID:              ev.ID,
+		Op:              ev.Op.String(),
+		Query:           ev.Query,
+		Args:            args,
+		StartTime:       ev.StartTime.Format(time.RFC3339Nano),
+		DurationMs:      float64(ev.Duration.Microseconds()) / 1000,
+		RowsAffected:    ev.RowsAffected,
+		Error:           ev.Error,
+		TxID:            ev.TxID,
+		NPlus1:          ev.NPlus1,
+		NormalizedQuery: ev.NormalizedQuery,
 	}
 }
 

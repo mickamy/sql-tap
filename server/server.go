@@ -109,16 +109,17 @@ func eventToProto(ev proxy.Event) *tapv1.QueryEvent {
 		args[i] = sanitizeUTF8(a)
 	}
 	return &tapv1.QueryEvent{
-		Id:           ev.ID,
-		Op:           int32(ev.Op),
-		Query:        sanitizeUTF8(ev.Query),
-		Args:         args,
-		StartTime:    timestamppb.New(ev.StartTime),
-		Duration:     durationpb.New(ev.Duration),
-		RowsAffected: ev.RowsAffected,
-		Error:        sanitizeUTF8(ev.Error),
-		TxId:         ev.TxID,
-		NPlus_1:      ev.NPlus1,
+		Id:              ev.ID,
+		Op:              int32(ev.Op),
+		Query:           sanitizeUTF8(ev.Query),
+		Args:            args,
+		StartTime:       timestamppb.New(ev.StartTime),
+		Duration:        durationpb.New(ev.Duration),
+		RowsAffected:    ev.RowsAffected,
+		Error:           sanitizeUTF8(ev.Error),
+		TxId:            ev.TxID,
+		NPlus_1:         ev.NPlus1,
+		NormalizedQuery: sanitizeUTF8(ev.NormalizedQuery),
 	}
 }
 

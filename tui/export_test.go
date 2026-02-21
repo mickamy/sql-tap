@@ -15,14 +15,15 @@ import (
 )
 
 func makeExportEvent(
-	op proxy.Op, query string, args []string,
+	op proxy.Op, query, normalizedQuery string, args []string,
 	dur time.Duration, startTime time.Time,
 ) *tapv1.QueryEvent {
 	ev := &tapv1.QueryEvent{
-		Op:        int32(op),
-		Query:     query,
-		Args:      args,
-		StartTime: timestamppb.New(startTime),
+		Op:              int32(op),
+		Query:           query,
+		NormalizedQuery: normalizedQuery,
+		Args:            args,
+		StartTime:       timestamppb.New(startTime),
 	}
 	if dur > 0 {
 		ev.Duration = durationpb.New(dur)
@@ -35,13 +36,16 @@ func testEvents() []*tapv1.QueryEvent {
 	return []*tapv1.QueryEvent{
 		makeExportEvent(proxy.OpQuery,
 			"SELECT id FROM users WHERE email = $1",
+			"SELECT id FROM users WHERE email = $1",
 			[]string{"alice@example.com"},
 			152300*time.Microsecond, base),
 		makeExportEvent(proxy.OpQuery,
 			"SELECT id FROM users WHERE email = $1",
+			"SELECT id FROM users WHERE email = $1",
 			[]string{"bob@example.com"},
 			203100*time.Microsecond, base.Add(time.Second)),
 		makeExportEvent(proxy.OpExec,
+			"INSERT INTO orders (user_id) VALUES ($1)",
 			"INSERT INTO orders (user_id) VALUES ($1)",
 			[]string{"1"},
 			50*time.Millisecond, base.Add(2*time.Second)),
@@ -64,7 +68,7 @@ func TestRenderMarkdown(t *testing.T) {
 		"['alice@example.com']",
 		"INSERT INTO orders",
 		"## Analytics",
-		"| Query | Count | Total | Avg |",
+		"| Query | Count | Avg | P95 | Max | Total |",
 	}
 
 	for _, want := range checks {
@@ -138,7 +142,7 @@ func TestRenderJSONEmptyArgs(t *testing.T) {
 
 	base := time.Date(2026, 2, 20, 15, 0, 0, 0, time.UTC)
 	events := []*tapv1.QueryEvent{
-		makeExportEvent(proxy.OpQuery, "SELECT 1", nil,
+		makeExportEvent(proxy.OpQuery, "SELECT 1", "SELECT ?", nil,
 			10*time.Millisecond, base),
 	}
 

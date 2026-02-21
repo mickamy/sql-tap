@@ -22,6 +22,7 @@ import (
 	"github.com/mickamy/sql-tap/proxy"
 	"github.com/mickamy/sql-tap/proxy/mysql"
 	"github.com/mickamy/sql-tap/proxy/postgres"
+	"github.com/mickamy/sql-tap/query"
 	"github.com/mickamy/sql-tap/server"
 	"github.com/mickamy/sql-tap/web"
 )
@@ -156,6 +157,9 @@ func run(
 
 	go func() {
 		for ev := range p.Events() {
+			if ev.Query != "" {
+				ev.NormalizedQuery = query.Normalize(ev.Query)
+			}
 			if det != nil && isSelectQuery(ev.Op, ev.Query) {
 				r := det.Record(ev.Query, ev.StartTime)
 				ev.NPlus1 = r.Matched
