@@ -477,6 +477,10 @@ function toggleTx(txId) {
     collapsedTx.delete(txId);
   } else {
     collapsedTx.add(txId);
+    if (selectedIdx >= 0 && events[selectedIdx] && events[selectedIdx].tx_id === txId) {
+      selectedIdx = -1;
+      detailEl.className = '';
+    }
   }
   render();
 }
