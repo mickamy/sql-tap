@@ -255,7 +255,7 @@ function buildDisplayRows() {
   // With filter active → flat list (current behavior)
   if (hasFilter) {
     const filtered = getFiltered();
-    return filtered.map(({ev, idx}) => ({kind: 'event', eventIdx: idx}));
+    return {rows: filtered.map(({ev, idx}) => ({kind: 'event', eventIdx: idx})), groupedTxIds: new Set()};
   }
 
   // No filter → group by tx
@@ -296,7 +296,7 @@ function buildDisplayRows() {
       rows.push({kind: 'event', eventIdx: i});
     }
   }
-  return rows;
+  return {rows, groupedTxIds: seenTx};
 }
 
 function txSummaryInfo(indices) {
@@ -321,7 +321,7 @@ function getTxColor(txId) {
 }
 
 function renderTable() {
-  const displayRows = buildDisplayRows();
+  const {rows: displayRows, groupedTxIds} = buildDisplayRows();
   const hasFilter = filterText.trim().length > 0;
   const pauseLabel = paused ? ' (paused)' : '';
   const eventCount = hasFilter
@@ -351,7 +351,7 @@ function renderTable() {
       const idx = row.eventIdx;
       const ev = events[idx];
       const colorIdx = ev.tx_id ? getTxColor(ev.tx_id) : undefined;
-      const isTxChild = !hasFilter && ev.tx_id;
+      const isTxChild = !hasFilter && ev.tx_id && groupedTxIds.has(ev.tx_id);
       const tr = document.createElement('tr');
       tr.className = 'row' +
         (isTxChild ? ' tx-child' : '') +
