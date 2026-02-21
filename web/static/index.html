@@ -18,6 +18,10 @@
     <div class="control-group">
       <button class="ctrl-btn" id="btn-pause" onclick="togglePause()">Pause</button>
       <button class="ctrl-btn" id="btn-clear" onclick="clearEvents()">Clear</button>
+      <div class="export-group">
+        <button class="ctrl-btn" onclick="exportData('json')">JSON</button>
+        <button class="ctrl-btn" onclick="exportData('md')">Markdown</button>
+      </div>
     </div>
     <input type="text" id="filter" placeholder="Filter (d>100ms op:select error ...)">
     <span class="status disconnected" id="status">connecting...</span>
