@@ -262,17 +262,28 @@ function buildDisplayRows() {
   const rows = [];
   const seenTx = new Set();
 
+  // Pre-index events by tx_id to avoid O(n^2) scans
+  const txIndex = new Map();
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    const txId = ev.tx_id;
+    if (!txId) continue;
+    let entry = txIndex.get(txId);
+    if (!entry) {
+      entry = { indices: [] };
+      txIndex.set(txId, entry);
+    }
+    entry.indices.push(i);
+  }
+
   for (let i = 0; i < events.length; i++) {
     const ev = events[i];
     const txId = ev.tx_id;
 
     if (txId && ev.op === 'Begin' && !seenTx.has(txId)) {
       seenTx.add(txId);
-      // Collect all events with this txId
-      const indices = [];
-      for (let j = 0; j < events.length; j++) {
-        if (events[j].tx_id === txId) indices.push(j);
-      }
+      const entry = txIndex.get(txId);
+      const indices = entry ? entry.indices : [i];
       rows.push({kind: 'tx', txId, eventIndices: indices});
       if (!collapsedTx.has(txId)) {
         for (const j of indices) {
