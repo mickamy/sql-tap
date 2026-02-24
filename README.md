@@ -290,6 +290,10 @@ sql-tapd parses the database wire protocol (PostgreSQL, MySQL, or TiDB) to inter
 statements, parameter bindings, transactions, execution time, rows affected, and errors. Events are streamed to
 connected TUI clients via gRPC.
 
+## See also
+
+- **[grpc-tap](https://github.com/mickamy/grpc-tap)** — Same concept for gRPC. Transparent HTTP/2 reverse proxy that captures every gRPC / gRPC-Web / Connect call with TUI + Web UI.
+
 ## License
 
 [MIT](./LICENSE)
