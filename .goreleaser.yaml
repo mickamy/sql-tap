@@ -36,18 +36,13 @@ archives:
       - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
-homebrew_casks:
+brews:
   - name: sql-tap
     homepage: https://github.com/mickamy/sql-tap
     description: Watch SQL traffic in real-time with a TUI
-    binaries:
-      - sql-tap
-      - sql-tapd
-    hooks:
-      post:
-        install: |
-          system_command "/usr/bin/xattr",
-                         args: ["-dr", "com.apple.quarantine", "#{staged_path}"]
+    install: |
+      bin.install "sql-tap"
+      bin.install "sql-tapd"
     repository:
       owner: mickamy
       name: homebrew-tap

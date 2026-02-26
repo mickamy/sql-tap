@@ -16,7 +16,7 @@ your application code.
 ### Homebrew
 
 ```bash
-brew install --cask mickamy/tap/sql-tap
+brew install mickamy/tap/sql-tap
 ```
 
 ### Go
