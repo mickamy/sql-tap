@@ -48,5 +48,20 @@ brews:
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
 
+nix:
+  # Publishes a Nix derivation that installs pre-built binaries to
+  # the mickamy/nur-packages repository on each release.
+  # Prerequisites:
+  #   1. Create the mickamy/nur-packages repository (NUR-compatible layout).
+  #   2. Add "install nix" step to the release workflow so nix-hash is available.
+  - name: sql-tap
+    homepage: https://github.com/mickamy/sql-tap
+    description: Watch SQL traffic in real-time with a TUI
+    license: mit
+    repository:
+      owner: mickamy
+      name: nur-packages
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+
 changelog:
   sort: asc

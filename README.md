@@ -34,6 +34,35 @@ cd sql-tap
 make install
 ```
 
+### Nix
+
+**Using the flake directly**
+
+```bash
+nix profile install github:mickamy/sql-tap
+```
+
+**In a `devenv.sh` project**
+
+Add `sql-tap` as a flake input in `devenv.yaml`:
+
+```yaml
+inputs:
+  sql-tap:
+    url: github:mickamy/sql-tap
+```
+
+Then reference it in `devenv.nix`:
+
+```nix
+{ inputs, pkgs, ... }:
+{
+  packages = [
+    inputs.sql-tap.packages.${pkgs.system}.default
+  ];
+}
+```
+
 ### Docker
 
 **PostgreSQL**
