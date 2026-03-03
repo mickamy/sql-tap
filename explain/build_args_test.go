@@ -1,8 +1,10 @@
-package explain
+package explain_test
 
 import (
 	"testing"
 	"time"
+
+	"github.com/mickamy/sql-tap/explain"
 )
 
 func TestParseTimestampParams(t *testing.T) {
@@ -64,13 +66,13 @@ func TestParseTimestampParams(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := parseTimestampParams(tt.query)
+			got := explain.ParseTimestampParams(tt.query)
 			if len(got) != len(tt.want) {
-				t.Fatalf("parseTimestampParams(%q) = %v, want %v", tt.query, got, tt.want)
+				t.Fatalf("ParseTimestampParams(%q) = %v, want %v", tt.query, got, tt.want)
 			}
 			for k, v := range tt.want {
 				if got[k] != v {
-					t.Errorf("parseTimestampParams(%q)[%d] = %v, want %v", tt.query, k, got[k], v)
+					t.Errorf("ParseTimestampParams(%q)[%d] = %v, want %v", tt.query, k, got[k], v)
 				}
 			}
 		})
@@ -81,10 +83,10 @@ func TestParsePGTimestamp(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
-		want    time.Time
-		wantOK  bool
+		name   string
+		input  string
+		want   time.Time
+		wantOK bool
 	}{
 		{
 			name:   "PostgreSQL epoch (zero)",
@@ -93,13 +95,13 @@ func TestParsePGTimestamp(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name:   "large microseconds value (issue repro: ~2026)",
-			input:  "825505830505628",
+			name:  "large microseconds value (issue repro: ~2026)",
+			input: "825505830505628",
 			want: func() time.Time {
 				microsecs := int64(825505830505628)
 				sec := microsecs / 1_000_000
 				usec := microsecs % 1_000_000
-				return time.Unix(sec+pgEpochUnix, usec*1_000).UTC()
+				return time.Unix(sec+explain.PgEpochUnix, usec*1_000).UTC()
 			}(),
 			wantOK: true,
 		},
@@ -136,12 +138,12 @@ func TestParsePGTimestamp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, ok := parsePGTimestamp(tt.input)
+			got, ok := explain.ParsePGTimestamp(tt.input)
 			if ok != tt.wantOK {
-				t.Fatalf("parsePGTimestamp(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+				t.Fatalf("ParsePGTimestamp(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
 			}
 			if ok && !got.Equal(tt.want) {
-				t.Errorf("parsePGTimestamp(%q) = %v, want %v", tt.input, got, tt.want)
+				t.Errorf("ParsePGTimestamp(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -227,7 +229,7 @@ func TestBuildAnyArgs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := buildAnyArgs(tt.query, tt.args)
+			got := explain.BuildAnyArgs(tt.query, tt.args)
 			tt.check(t, got)
 		})
 	}
