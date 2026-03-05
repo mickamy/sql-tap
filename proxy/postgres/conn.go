@@ -23,6 +23,15 @@ type encoder interface {
 	Encode(dst []byte) ([]byte, error)
 }
 
+// Timestamp type OIDs in the PostgreSQL type catalog.
+const (
+	oidTimestamp   uint32 = 1114
+	oidTimestampTZ uint32 = 1184
+)
+
+// pgEpochUnix is the Unix timestamp of PostgreSQL's internal epoch (2000-01-01 00:00:00 UTC).
+const pgEpochUnix int64 = 946684800
+
 // conn manages bidirectional relay and protocol parsing for a single connection.
 type conn struct {
 	client   *pgproto.Backend  // reads FrontendMessages from client
@@ -33,10 +42,12 @@ type conn struct {
 	events       chan<- proxy.Event
 
 	// Extended query state.
-	preparedStmts map[string]string // stmt name -> query
-	lastParse     string            // query from most recent Parse
-	lastBindArgs  []string          // args from most recent Bind
-	lastBindStmt  string            // stmt name from most recent Bind
+	preparedStmts    map[string]string   // stmt name -> query
+	preparedStmtOIDs map[string][]uint32 // stmt name -> parameter OIDs
+	lastParse        string              // query from most recent Parse
+	lastParamOIDs    []uint32            // parameter OIDs from most recent Parse
+	lastBindArgs     []string            // args from most recent Bind
+	lastBindStmt     string              // stmt name from most recent Bind
 
 	// Transaction tracking.
 	activeTxID string
@@ -48,10 +59,11 @@ type conn struct {
 
 func newConn(clientConn, upstreamConn net.Conn, events chan<- proxy.Event) *conn {
 	return &conn{
-		clientConn:    clientConn,
-		upstreamConn:  upstreamConn,
-		events:        events,
-		preparedStmts: make(map[string]string),
+		clientConn:       clientConn,
+		upstreamConn:     upstreamConn,
+		events:           events,
+		preparedStmts:    make(map[string]string),
+		preparedStmtOIDs: make(map[string][]uint32),
 	}
 }
 
@@ -297,17 +309,29 @@ func (c *conn) handleSimpleQuery(m *pgproto.Query) {
 
 func (c *conn) handleParse(m *pgproto.Parse) {
 	c.lastParse = m.Query
+	c.lastParamOIDs = m.ParameterOIDs
 	if m.Name != "" {
 		c.preparedStmts[m.Name] = m.Query
+		c.preparedStmtOIDs[m.Name] = m.ParameterOIDs
 	}
 }
 
 func (c *conn) handleBind(m *pgproto.Bind) {
 	c.lastBindStmt = m.PreparedStatement
+	paramOIDs := c.lastParamOIDs
+	if m.PreparedStatement != "" {
+		if oids, ok := c.preparedStmtOIDs[m.PreparedStatement]; ok {
+			paramOIDs = oids
+		}
+	}
 	c.lastBindArgs = make([]string, len(m.Parameters))
 	for i, p := range m.Parameters {
+		oid := uint32(0)
+		if i < len(paramOIDs) {
+			oid = paramOIDs[i]
+		}
 		if isBinaryFormat(m.ParameterFormatCodes, i) {
-			c.lastBindArgs[i] = decodeBinaryParam(p)
+			c.lastBindArgs[i] = decodeBinaryParam(p, oid)
 		} else {
 			c.lastBindArgs[i] = string(p)
 		}
@@ -327,8 +351,15 @@ func isBinaryFormat(codes []int16, i int) bool {
 }
 
 // decodeBinaryParam attempts to decode a binary-format parameter into a readable string.
-// Without type OID information, we use the byte length as a heuristic for common types.
-func decodeBinaryParam(p []byte) string {
+// When oid identifies a timestamp type, the 8-byte PostgreSQL microsecond representation
+// is decoded as an RFC3339 string so it can be used directly in parameterised queries
+// (including EXPLAIN) without causing "date/time field value out of range" errors.
+// For all other types, the byte length is used as a heuristic for common types.
+func decodeBinaryParam(p []byte, oid uint32) string {
+	if (oid == oidTimestamp || oid == oidTimestampTZ) && len(p) == 8 {
+		microsecs := int64(binary.BigEndian.Uint64(p)) //nolint:gosec // interpreting as signed int64
+		return decodePGTimestampMicros(microsecs)
+	}
 	switch len(p) {
 	case 1:
 		// bool or int8
@@ -347,6 +378,18 @@ func decodeBinaryParam(p []byte) string {
 		}
 	}
 	return string(p)
+}
+
+// decodePGTimestampMicros converts a PostgreSQL binary timestamp (microseconds since
+// 2000-01-01 00:00:00 UTC) to an RFC3339Nano string that PostgreSQL can parse back.
+func decodePGTimestampMicros(microsecs int64) string {
+	sec := microsecs / 1_000_000
+	usec := microsecs % 1_000_000
+	if usec < 0 {
+		sec--
+		usec += 1_000_000
+	}
+	return time.Unix(sec+pgEpochUnix, usec*1_000).UTC().Format(time.RFC3339Nano)
 }
 
 func (c *conn) handleExecute() {
