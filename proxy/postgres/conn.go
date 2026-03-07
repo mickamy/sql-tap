@@ -48,6 +48,12 @@ type conn struct {
 	lastParamOIDs    []uint32            // parameter OIDs from most recent Parse
 	lastBindArgs     []string            // args from most recent Bind
 	lastBindStmt     string              // stmt name from most recent Bind
+	lastDescribeStmt string              // stmt name from most recent Describe('S')
+
+	// stmtMu protects OID-related fields that are written by
+	// handleParameterDescription (upstream→client goroutine) and read by
+	// handleBind / written by handleParse (client→upstream goroutine).
+	stmtMu sync.Mutex
 
 	// Transaction tracking.
 	activeTxID string
@@ -275,6 +281,8 @@ func (c *conn) captureClientMsg(msg pgproto.FrontendMessage) {
 		c.handleSimpleQuery(m)
 	case *pgproto.Parse:
 		c.handleParse(m)
+	case *pgproto.Describe:
+		c.handleDescribe(m)
 	case *pgproto.Bind:
 		c.handleBind(m)
 	case *pgproto.Execute:
@@ -284,6 +292,8 @@ func (c *conn) captureClientMsg(msg pgproto.FrontendMessage) {
 
 func (c *conn) captureUpstreamMsg(msg pgproto.BackendMessage) {
 	switch m := msg.(type) {
+	case *pgproto.ParameterDescription:
+		c.handleParameterDescription(m)
 	case *pgproto.CommandComplete:
 		c.handleCommandComplete(m)
 	case *pgproto.ErrorResponse:
@@ -309,21 +319,48 @@ func (c *conn) handleSimpleQuery(m *pgproto.Query) {
 
 func (c *conn) handleParse(m *pgproto.Parse) {
 	c.lastParse = m.Query
+	c.stmtMu.Lock()
 	c.lastParamOIDs = m.ParameterOIDs
 	if m.Name != "" {
-		c.preparedStmts[m.Name] = m.Query
 		c.preparedStmtOIDs[m.Name] = m.ParameterOIDs
+	}
+	c.stmtMu.Unlock()
+	if m.Name != "" {
+		c.preparedStmts[m.Name] = m.Query
+	}
+}
+
+func (c *conn) handleDescribe(m *pgproto.Describe) {
+	if m.ObjectType == 'S' {
+		c.stmtMu.Lock()
+		c.lastDescribeStmt = m.Name
+		c.stmtMu.Unlock()
+	}
+}
+
+// handleParameterDescription captures the server-resolved parameter OIDs
+// returned by the upstream in response to a Describe(Statement) message.
+// These OIDs are authoritative — they override the OIDs from Parse, which
+// are often all zeros (meaning "let the server decide").
+func (c *conn) handleParameterDescription(m *pgproto.ParameterDescription) {
+	c.stmtMu.Lock()
+	defer c.stmtMu.Unlock()
+	c.lastParamOIDs = m.ParameterOIDs
+	if c.lastDescribeStmt != "" {
+		c.preparedStmtOIDs[c.lastDescribeStmt] = m.ParameterOIDs
 	}
 }
 
 func (c *conn) handleBind(m *pgproto.Bind) {
 	c.lastBindStmt = m.PreparedStatement
+	c.stmtMu.Lock()
 	paramOIDs := c.lastParamOIDs
 	if m.PreparedStatement != "" {
 		if oids, ok := c.preparedStmtOIDs[m.PreparedStatement]; ok {
 			paramOIDs = oids
 		}
 	}
+	c.stmtMu.Unlock()
 	c.lastBindArgs = make([]string, len(m.Parameters))
 	for i, p := range m.Parameters {
 		oid := uint32(0)

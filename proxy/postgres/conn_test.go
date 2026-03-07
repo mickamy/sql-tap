@@ -1,11 +1,72 @@
 package postgres_test
 
 import (
+	"encoding/binary"
 	"testing"
 	"time"
 
 	pgproxy "github.com/mickamy/sql-tap/proxy/postgres"
 )
+
+func TestDecodeBinaryParam(t *testing.T) {
+	t.Parallel()
+
+	// Encode microseconds as big-endian 8 bytes, matching PostgreSQL binary format.
+	encodeMicros := func(us int64) []byte {
+		b := make([]byte, 8)
+		binary.BigEndian.PutUint64(b, uint64(us))
+		return b
+	}
+
+	tests := []struct {
+		name       string
+		data       []byte
+		oid        uint32
+		wantTime   bool // true if the result should parse as RFC3339
+		wantString string
+	}{
+		{
+			name:     "timestamp OID decodes as RFC3339",
+			data:     encodeMicros(826159500119733),
+			oid:      pgproxy.OidTimestamp,
+			wantTime: true,
+		},
+		{
+			name:     "timestamptz OID decodes as RFC3339",
+			data:     encodeMicros(826159500119733),
+			oid:      pgproxy.OidTimestampTZ,
+			wantTime: true,
+		},
+		{
+			name:       "zero OID 8-byte value decoded as plain int64",
+			data:       encodeMicros(826159500119733),
+			oid:        0,
+			wantTime:   false,
+			wantString: "826159500119733",
+		},
+		{
+			name:       "4-byte int32",
+			data:       []byte{0, 0, 0, 42},
+			oid:        0,
+			wantString: "42",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := pgproxy.DecodeBinaryParam(tt.data, tt.oid)
+			if tt.wantTime {
+				if _, err := time.Parse(time.RFC3339Nano, got); err != nil {
+					t.Errorf("DecodeBinaryParam() = %q, want RFC3339 parseable string", got)
+				}
+			} else if tt.wantString != "" && got != tt.wantString {
+				t.Errorf("DecodeBinaryParam() = %q, want %q", got, tt.wantString)
+			}
+		})
+	}
+}
 
 func TestDecodePGTimestampMicros(t *testing.T) {
 	t.Parallel()
