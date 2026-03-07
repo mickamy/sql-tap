@@ -65,26 +65,25 @@ Then reference it in `devenv.nix`:
 
 ### Docker
 
-**PostgreSQL**
-
 ```dockerfile
-FROM postgres:18-alpine
+FROM alpine:3
 ARG SQL_TAP_VERSION=0.0.1
 ARG TARGETARCH
 ADD https://github.com/mickamy/sql-tap/releases/download/v${SQL_TAP_VERSION}/sql-tap_${SQL_TAP_VERSION}_linux_${TARGETARCH}.tar.gz /tmp/sql-tap.tar.gz
 RUN tar -xzf /tmp/sql-tap.tar.gz -C /usr/local/bin sql-tapd && rm /tmp/sql-tap.tar.gz
-ENTRYPOINT ["sql-tapd", "--driver=postgres", "--listen=:5433", "--upstream=localhost:5432", "--grpc=:9091"]
+ENTRYPOINT ["sql-tapd"]
 ```
 
-**MySQL**
+Run as a sidecar alongside your database:
 
-```dockerfile
-FROM mysql:8
-ARG SQL_TAP_VERSION=0.0.1
-ARG TARGETARCH
-ADD https://github.com/mickamy/sql-tap/releases/download/v${SQL_TAP_VERSION}/sql-tap_${SQL_TAP_VERSION}_linux_${TARGETARCH}.tar.gz /tmp/sql-tap.tar.gz
-RUN tar -xzf /tmp/sql-tap.tar.gz -C /usr/local/bin sql-tapd && rm /tmp/sql-tap.tar.gz
-ENTRYPOINT ["sql-tapd", "--driver=mysql", "--listen=:3307", "--upstream=localhost:3306", "--grpc=:9091"]
+```bash
+# PostgreSQL
+docker run --rm --network=host sql-tap \
+  --driver=postgres --listen=:5433 --upstream=localhost:5432 --grpc=:9091
+
+# MySQL
+docker run --rm --network=host sql-tap \
+  --driver=mysql --listen=:3307 --upstream=localhost:3306 --grpc=:9091
 ```
 
 ## Quick start
