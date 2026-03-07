@@ -14,7 +14,7 @@ func TestDecodeBinaryParam(t *testing.T) {
 	// Encode microseconds as big-endian 8 bytes, matching PostgreSQL binary format.
 	encodeMicros := func(us int64) []byte {
 		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, uint64(us))
+		binary.BigEndian.PutUint64(b, uint64(us)) //nolint:gosec // test helper: intentional signed→unsigned reinterpretation
 		return b
 	}
 
