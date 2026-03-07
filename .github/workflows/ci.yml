@@ -6,12 +6,9 @@ on:
       - "**"
     tags:
       - "v*"
-  pull_request:
-    branches:
-      - "**"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   lint:
