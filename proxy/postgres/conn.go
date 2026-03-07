@@ -301,6 +301,8 @@ func (c *conn) captureUpstreamMsg(msg pgproto.BackendMessage) {
 		c.handleCommandComplete(m)
 	case *pgproto.ErrorResponse:
 		c.handleErrorResponse(m)
+	case *pgproto.ReadyForQuery:
+		c.drainPendingDescribes()
 	}
 }
 
@@ -364,6 +366,15 @@ func (c *conn) handleParameterDescription(m *pgproto.ParameterDescription) {
 		// Named statement: only update its entry without touching lastParamOIDs.
 		c.preparedStmtOIDs[name] = m.ParameterOIDs
 	}
+}
+
+// drainPendingDescribes clears any unmatched Describe entries from the queue.
+// Called on ReadyForQuery, which marks the end of a query cycle — any pending
+// entries at this point were skipped by the server due to an earlier error.
+func (c *conn) drainPendingDescribes() {
+	c.stmtMu.Lock()
+	c.pendingDescribes = c.pendingDescribes[:0]
+	c.stmtMu.Unlock()
 }
 
 func (c *conn) handleBind(m *pgproto.Bind) {
