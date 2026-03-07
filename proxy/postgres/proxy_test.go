@@ -70,7 +70,7 @@ func startProxy(t *testing.T, upstream string) (*pproxy.Proxy, string) {
 	_ = lis.Close()
 
 	p := pproxy.New(addr, upstream)
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(t.Context()) //nolint:gosec // cancel is deferred below via t.Cleanup
 
 	go func() {
 		if err := p.ListenAndServe(ctx); err != nil {

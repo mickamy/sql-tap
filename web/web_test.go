@@ -24,7 +24,7 @@ func TestStaticFiles(t *testing.T) {
 
 	ctx := context.Background()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/", nil)
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // test URL
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestSSE_ReceivesEvents(t *testing.T) {
 	defer cancel()
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/events", nil)
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // test URL
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestSSE_DisconnectUnsubscribes(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/events", nil)
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // test URL
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestExplain_NotConfigured(t *testing.T) {
 	ctx := context.Background()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, ts.URL+"/api/explain", body)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // test URL
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
