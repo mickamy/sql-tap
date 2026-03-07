@@ -37,7 +37,7 @@ func openEditor(query string, args []string, mode explain.Mode) tea.Cmd {
 
 	if _, err := f.WriteString(header + query); err != nil {
 		_ = f.Close()
-		_ = os.Remove(path) //nolint:gosec // path is a controlled temp file created by this function
+		_ = os.Remove(path)
 		return func() tea.Msg {
 			return editorResultMsg{err: err, mode: mode}
 		}

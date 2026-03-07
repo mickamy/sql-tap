@@ -426,7 +426,7 @@ func decodeBinaryParam(p []byte, oid uint32) string {
 	switch len(p) {
 	case 1:
 		// bool or int8
-		return strconv.Itoa(int(int8(p[0])))
+		return strconv.Itoa(int(int8(p[0]))) //nolint:gosec // interpreting as signed int8
 	case 2:
 		return strconv.Itoa(int(int16(binary.BigEndian.Uint16(p)))) //nolint:gosec // interpreting as signed int16
 	case 4:
