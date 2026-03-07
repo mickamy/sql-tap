@@ -9,6 +9,6 @@ var DecodeBinaryParam = decodeBinaryParam
 
 // OID constants for testing.
 const (
-	OidTimestamp   = oidTimestamp
-	OidTimestampTZ = oidTimestampTZ
+	OIDTimestamp   = oidTimestamp
+	OIDTimestampTZ = oidTimestampTZ
 )

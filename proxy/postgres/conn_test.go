@@ -28,13 +28,13 @@ func TestDecodeBinaryParam(t *testing.T) {
 		{
 			name:     "timestamp OID decodes as RFC3339",
 			data:     encodeMicros(826159500119733),
-			oid:      pgproxy.OidTimestamp,
+			oid:      pgproxy.OIDTimestamp,
 			wantTime: true,
 		},
 		{
 			name:     "timestamptz OID decodes as RFC3339",
 			data:     encodeMicros(826159500119733),
-			oid:      pgproxy.OidTimestampTZ,
+			oid:      pgproxy.OIDTimestampTZ,
 			wantTime: true,
 		},
 		{

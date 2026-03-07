@@ -48,7 +48,10 @@ type conn struct {
 	lastParamOIDs    []uint32            // parameter OIDs from most recent Parse
 	lastBindArgs     []string            // args from most recent Bind
 	lastBindStmt     string              // stmt name from most recent Bind
-	lastDescribeStmt string              // stmt name from most recent Describe('S')
+	// pendingDescribes is a FIFO queue of statement names from Describe('S')
+	// messages. ParameterDescription responses arrive in the same order, so
+	// we pop from the front to match each response to its request.
+	pendingDescribes []string
 
 	// stmtMu protects OID-related fields that are written by
 	// handleParameterDescription (upstream→client goroutine) and read by
@@ -333,7 +336,7 @@ func (c *conn) handleParse(m *pgproto.Parse) {
 func (c *conn) handleDescribe(m *pgproto.Describe) {
 	if m.ObjectType == 'S' {
 		c.stmtMu.Lock()
-		c.lastDescribeStmt = m.Name
+		c.pendingDescribes = append(c.pendingDescribes, m.Name)
 		c.stmtMu.Unlock()
 	}
 }
@@ -342,12 +345,24 @@ func (c *conn) handleDescribe(m *pgproto.Describe) {
 // returned by the upstream in response to a Describe(Statement) message.
 // These OIDs are authoritative — they override the OIDs from Parse, which
 // are often all zeros (meaning "let the server decide").
+// Responses arrive in the same order as the corresponding Describe requests,
+// so we pop from the front of pendingDescribes to match them.
 func (c *conn) handleParameterDescription(m *pgproto.ParameterDescription) {
 	c.stmtMu.Lock()
 	defer c.stmtMu.Unlock()
-	c.lastParamOIDs = m.ParameterOIDs
-	if c.lastDescribeStmt != "" {
-		c.preparedStmtOIDs[c.lastDescribeStmt] = m.ParameterOIDs
+
+	if len(c.pendingDescribes) == 0 {
+		return
+	}
+	name := c.pendingDescribes[0]
+	c.pendingDescribes = c.pendingDescribes[1:]
+
+	if name == "" {
+		// Unnamed statement: update the fallback OIDs used by unnamed binds.
+		c.lastParamOIDs = m.ParameterOIDs
+	} else {
+		// Named statement: only update its entry without touching lastParamOIDs.
+		c.preparedStmtOIDs[name] = m.ParameterOIDs
 	}
 }
 
