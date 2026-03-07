@@ -42,6 +42,7 @@ type conn struct {
 	events       chan<- proxy.Event
 
 	// Extended query state.
+	// preparedStmts is only accessed by the client→upstream goroutine.
 	preparedStmts    map[string]string   // stmt name -> query
 	preparedStmtOIDs map[string][]uint32 // stmt name -> parameter OIDs
 	lastParse        string              // query from most recent Parse
@@ -373,7 +374,7 @@ func (c *conn) handleParameterDescription(m *pgproto.ParameterDescription) {
 // entries at this point were skipped by the server due to an earlier error.
 func (c *conn) drainPendingDescribes() {
 	c.stmtMu.Lock()
-	c.pendingDescribes = c.pendingDescribes[:0]
+	c.pendingDescribes = nil
 	c.stmtMu.Unlock()
 }
 
