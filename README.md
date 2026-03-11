@@ -186,7 +186,7 @@ sql-tap -ci localhost:9091 &
 CI_PID=$!
 
 # Run your tests through the proxy
-DATABASE_URL="postgres://user:pass@localhost:5433/db" go test ./...
+DATABASE_URL="postgres://user:pass@localhost:5433/db?sslmode=disable" go test ./...
 
 # Stop sql-tap — prints report and exits 0 (clean) or 1 (problems found)
 kill $CI_PID
