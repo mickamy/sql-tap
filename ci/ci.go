@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
@@ -113,13 +114,8 @@ func isStreamDone(ctx context.Context, err error) bool {
 	if ctx.Err() != nil {
 		return true
 	}
-	// gRPC wraps context errors in status; unwrap and check.
-	if s, ok := status.FromError(err); ok {
-		msg := s.Message()
-		return strings.Contains(msg, "context canceled") ||
-			strings.Contains(msg, "context deadline exceeded")
-	}
-	return false
+	code := status.Code(err)
+	return code == codes.Canceled || code == codes.DeadlineExceeded
 }
 
 // Aggregate computes the CI result from collected events.
