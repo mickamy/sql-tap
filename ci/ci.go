@@ -65,6 +65,8 @@ func (r Result) Report() string {
 		case ProblemSlowQuery:
 			avg := p.AvgDuration.Truncate(time.Millisecond)
 			fmt.Fprintf(&b, "  [SLOW] %s  (avg %s, %d occurrences)\n", p.Query, avg, p.Count)
+		default:
+			fmt.Fprintf(&b, "  [%s] %s  (%d occurrences)\n", string(p.Kind), p.Query, p.Count)
 		}
 	}
 
@@ -73,7 +75,7 @@ func (r Result) Report() string {
 }
 
 // Run connects to the gRPC server at addr, collects query events until ctx is
-// cancelled, and returns the aggregated result.
+// cancelled or the server closes the stream, and returns the aggregated result.
 func Run(ctx context.Context, addr string) (Result, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

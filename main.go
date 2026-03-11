@@ -24,7 +24,8 @@ func main() {
 	}
 
 	showVersion := fs.Bool("version", false, "show version and exit")
-	ciMode := fs.Bool("ci", false, "run in CI mode: collect events until SIGTERM/SIGINT, then report and exit")
+	ciMode := fs.Bool("ci", false,
+		"run in CI mode: collect events until SIGTERM/SIGINT or stream ends, then report and exit")
 
 	_ = fs.Parse(os.Args[1:])
 
@@ -69,7 +70,7 @@ func runCIExitCode(addr string) int {
 		return 1
 	}
 
-	fmt.Fprint(os.Stderr, result.Report())
+	fmt.Fprint(os.Stdout, result.Report())
 
 	if result.HasProblems() {
 		return 1
