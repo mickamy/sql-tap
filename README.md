@@ -178,7 +178,7 @@ Flags:
 
 ### CI mode
 
-Run `sql-tap -ci` to detect N+1 and slow queries in your test suite. It connects to a running sql-tapd, collects events, and exits with code 1 if any problems are found.
+Run `sql-tap -ci` to detect N+1 and slow queries in your test suite. It connects to a running sql-tapd (see [Quick start](#quick-start) for setup), collects events, and exits with code 1 if any problems are found.
 
 ```bash
 # Start sql-tap in CI mode (background)
