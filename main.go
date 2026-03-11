@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/mickamy/sql-tap/ci"
 	"github.com/mickamy/sql-tap/tui"
 )
 
@@ -20,6 +24,8 @@ func main() {
 	}
 
 	showVersion := fs.Bool("version", false, "show version and exit")
+	ciMode := fs.Bool("ci", false,
+		"run in CI mode: collect events until SIGTERM/SIGINT or stream ends, then report and exit")
 
 	_ = fs.Parse(os.Args[1:])
 
@@ -33,7 +39,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	monitor(fs.Arg(0))
+	addr := fs.Arg(0)
+	if *ciMode {
+		runCI(addr)
+	} else {
+		monitor(addr)
+	}
 }
 
 func monitor(addr string) {
@@ -43,4 +54,26 @@ func monitor(addr string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func runCI(addr string) {
+	os.Exit(runCIExitCode(addr))
+}
+
+func runCIExitCode(addr string) int {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	result, err := ci.Run(ctx, addr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprint(os.Stdout, result.Report())
+
+	if result.HasProblems() {
+		return 1
+	}
+	return 0
 }
