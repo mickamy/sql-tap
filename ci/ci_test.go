@@ -1,13 +1,18 @@
 package ci_test
 
 import (
+	"context"
+	"net"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/mickamy/sql-tap/broker"
 	"github.com/mickamy/sql-tap/ci"
 	tapv1 "github.com/mickamy/sql-tap/gen/tap/v1"
+	"github.com/mickamy/sql-tap/proxy"
+	"github.com/mickamy/sql-tap/server"
 )
 
 func TestResult_HasProblems(t *testing.T) {
@@ -194,6 +199,117 @@ func TestAggregate_UsesRawQueryWhenNormalizedEmpty(t *testing.T) {
 	}
 	if result.Problems[0].Query != rawQuery {
 		t.Errorf("Query = %q, want %q", result.Problems[0].Query, rawQuery)
+	}
+}
+
+func startServer(t *testing.T, b *broker.Broker) string {
+	t.Helper()
+
+	var lc net.ListenConfig
+	lis, err := lc.Listen(t.Context(), "tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := server.New(b, nil)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+
+	return lis.Addr().String()
+}
+
+func TestRun_AggregatesEventsOnContextCancel(t *testing.T) {
+	t.Parallel()
+
+	b := broker.New(8)
+	addr := startServer(t, b)
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	done := make(chan ci.Result, 1)
+	errc := make(chan error, 1)
+	go func() {
+		result, err := ci.Run(ctx, addr)
+		if err != nil {
+			errc <- err
+			return
+		}
+		done <- result
+	}()
+
+	// Wait for subscription to register.
+	time.Sleep(50 * time.Millisecond)
+
+	b.Publish(proxy.Event{ID: "1", Op: proxy.OpQuery, Query: "SELECT 1"})
+	b.Publish(proxy.Event{
+		ID: "2", Op: proxy.OpQuery, Query: "SELECT id FROM users WHERE id = 1",
+		NPlus1:          true,
+		NormalizedQuery: "SELECT id FROM users WHERE id = ?",
+	})
+	b.Publish(proxy.Event{
+		ID: "3", Op: proxy.OpQuery, Query: "SELECT id FROM users WHERE id = 2",
+		NPlus1:          true,
+		NormalizedQuery: "SELECT id FROM users WHERE id = ?",
+	})
+
+	// Give events time to arrive, then cancel.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case result := <-done:
+		if result.TotalQueries != 3 {
+			t.Errorf("TotalQueries = %d, want 3", result.TotalQueries)
+		}
+		if !result.HasProblems() {
+			t.Error("expected problems")
+		}
+	case err := <-errc:
+		t.Fatalf("Run returned error: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Run to return")
+	}
+}
+
+func TestRun_NoProblemEvents(t *testing.T) {
+	t.Parallel()
+
+	b := broker.New(8)
+	addr := startServer(t, b)
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	done := make(chan ci.Result, 1)
+	errc := make(chan error, 1)
+	go func() {
+		result, err := ci.Run(ctx, addr)
+		if err != nil {
+			errc <- err
+			return
+		}
+		done <- result
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	b.Publish(proxy.Event{ID: "1", Op: proxy.OpQuery, Query: "SELECT 1"})
+	b.Publish(proxy.Event{ID: "2", Op: proxy.OpExec, Query: "INSERT INTO t VALUES (1)"})
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case result := <-done:
+		if result.TotalQueries != 2 {
+			t.Errorf("TotalQueries = %d, want 2", result.TotalQueries)
+		}
+		if result.HasProblems() {
+			t.Error("expected no problems")
+		}
+	case err := <-errc:
+		t.Fatalf("Run returned error: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Run to return")
 	}
 }
 
