@@ -91,7 +91,7 @@ func Run(ctx context.Context, addr string) (Result, error) {
 }
 
 func collect(ctx context.Context, stream tapv1.TapService_WatchClient) (Result, error) {
-	var events []*tapv1.QueryEvent
+	a := newAggregator()
 
 	for {
 		resp, err := stream.Recv()
@@ -101,10 +101,10 @@ func collect(ctx context.Context, stream tapv1.TapService_WatchClient) (Result, 
 			}
 			return Result{}, fmt.Errorf("recv: %w", err)
 		}
-		events = append(events, resp.GetEvent())
+		a.add(resp.GetEvent())
 	}
 
-	return Aggregate(events), nil
+	return a.result(), nil
 }
 
 func isStreamDone(ctx context.Context, err error) bool {
@@ -118,42 +118,49 @@ func isStreamDone(ctx context.Context, err error) bool {
 	return code == codes.Canceled || code == codes.DeadlineExceeded
 }
 
-// Aggregate computes the CI result from collected events.
-func Aggregate(events []*tapv1.QueryEvent) Result {
-	result := Result{TotalQueries: len(events)}
+type queryStats struct {
+	nplus1Count int
+	slowCount   int
+	totalDur    time.Duration
+}
 
-	type stats struct {
-		nplus1Count int
-		slowCount   int
-		totalDur    time.Duration
+type aggregator struct {
+	total   int
+	grouped map[string]*queryStats
+}
+
+func newAggregator() *aggregator {
+	return &aggregator{grouped: make(map[string]*queryStats)}
+}
+
+func (a *aggregator) add(e *tapv1.QueryEvent) {
+	a.total++
+	if !e.GetNPlus_1() && !e.GetSlowQuery() {
+		return
 	}
-
-	grouped := make(map[string]*stats)
-
-	for _, e := range events {
-		if !e.GetNPlus_1() && !e.GetSlowQuery() {
-			continue
-		}
-		q := normalizedOrRaw(e)
-		s, ok := grouped[q]
-		if !ok {
-			s = &stats{}
-			grouped[q] = s
-		}
-		if e.GetNPlus_1() {
-			s.nplus1Count++
-		}
-		if e.GetSlowQuery() {
-			s.slowCount++
-			if d := e.GetDuration(); d != nil {
-				s.totalDur += d.AsDuration()
-			}
+	q := normalizedOrRaw(e)
+	s, ok := a.grouped[q]
+	if !ok {
+		s = &queryStats{}
+		a.grouped[q] = s
+	}
+	if e.GetNPlus_1() {
+		s.nplus1Count++
+	}
+	if e.GetSlowQuery() {
+		s.slowCount++
+		if d := e.GetDuration(); d != nil {
+			s.totalDur += d.AsDuration()
 		}
 	}
+}
 
-	for q, s := range grouped {
+func (a *aggregator) result() Result {
+	r := Result{TotalQueries: a.total}
+
+	for q, s := range a.grouped {
 		if s.nplus1Count > 0 {
-			result.Problems = append(result.Problems, Problem{
+			r.Problems = append(r.Problems, Problem{
 				Kind:  ProblemNPlus1,
 				Query: q,
 				Count: s.nplus1Count,
@@ -161,7 +168,7 @@ func Aggregate(events []*tapv1.QueryEvent) Result {
 		}
 		if s.slowCount > 0 {
 			avg := s.totalDur / time.Duration(s.slowCount)
-			result.Problems = append(result.Problems, Problem{
+			r.Problems = append(r.Problems, Problem{
 				Kind:        ProblemSlowQuery,
 				Query:       q,
 				Count:       s.slowCount,
@@ -170,14 +177,24 @@ func Aggregate(events []*tapv1.QueryEvent) Result {
 		}
 	}
 
-	sort.Slice(result.Problems, func(i, j int) bool {
-		if result.Problems[i].Kind != result.Problems[j].Kind {
-			return result.Problems[i].Kind < result.Problems[j].Kind
+	sort.Slice(r.Problems, func(i, j int) bool {
+		if r.Problems[i].Kind != r.Problems[j].Kind {
+			return r.Problems[i].Kind < r.Problems[j].Kind
 		}
-		return result.Problems[i].Count > result.Problems[j].Count
+		return r.Problems[i].Count > r.Problems[j].Count
 	})
 
-	return result
+	return r
+}
+
+// Aggregate computes the CI result from the given events.
+// Intended for testing; the streaming path uses aggregator directly.
+func Aggregate(events []*tapv1.QueryEvent) Result {
+	a := newAggregator()
+	for _, e := range events {
+		a.add(e)
+	}
+	return a.result()
 }
 
 func normalizedOrRaw(e *tapv1.QueryEvent) string {
