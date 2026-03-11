@@ -189,8 +189,8 @@ CI_PID=$!
 DATABASE_URL="postgres://user:pass@localhost:5433/db?sslmode=disable" go test ./...
 
 # Stop sql-tap — prints report and exits 0 (clean) or 1 (problems found)
-kill $CI_PID
-wait $CI_PID
+kill "$CI_PID" 2>/dev/null || true
+wait "$CI_PID" 2>/dev/null || true
 ```
 
 Example output:
