@@ -843,7 +843,8 @@ function renderTimeline() {
 
   const dpr = window.devicePixelRatio || 1;
   const wrapW = timelineWrap.clientWidth;
-  const chartW = Math.max(wrapW - TL_LABEL_W, 1);
+  const labelW = Math.min(TL_LABEL_W, Math.max(Math.floor(wrapW * 0.35), 80));
+  const chartW = Math.max(wrapW - labelW, 1);
   const totalH = TL_PAD_TOP + filtered.length * TL_ROW_H + 8;
 
   timelineCanvas.style.width = wrapW + 'px';
@@ -859,7 +860,7 @@ function renderTimeline() {
   ctx.fillRect(0, 0, wrapW, totalH);
 
   // Time axis
-  drawTimeAxis(ctx, spanMs, chartW, totalH);
+  drawTimeAxis(ctx, spanMs, chartW, totalH, labelW);
 
   // Bars
   ctx.font = '11px monospace';
@@ -870,11 +871,11 @@ function renderTimeline() {
 
     // Label (truncated query)
     ctx.fillStyle = '#888';
-    const label = truncateQuery(ev.query || ev.op, 46);
+    const label = truncateQuery(ev.query || ev.op, Math.floor(labelW / 7.8));
     ctx.fillText(label, 8, y + TL_BAR_H - 3);
 
     // Bar
-    const x = TL_LABEL_W + ((t0 - minT) / spanMs) * chartW;
+    const x = labelW + ((t0 - minT) / spanMs) * chartW;
     const w = Math.max((ev.duration_ms / spanMs) * chartW, 2);
     ctx.fillStyle = barColor(ev);
     ctx.fillRect(x, y + 2, w, TL_BAR_H - 4);
@@ -887,7 +888,7 @@ function renderTimeline() {
   }
 }
 
-function drawTimeAxis(ctx, spanMs, chartW, totalH) {
+function drawTimeAxis(ctx, spanMs, chartW, totalH, labelW) {
   const tickCount = Math.max(Math.min(Math.floor(chartW / 80), 10), 1);
   ctx.fillStyle = '#555';
   ctx.strokeStyle = '#333';
@@ -896,7 +897,7 @@ function drawTimeAxis(ctx, spanMs, chartW, totalH) {
 
   for (let i = 0; i <= tickCount; i++) {
     const frac = i / tickCount;
-    const x = TL_LABEL_W + frac * chartW;
+    const x = labelW + frac * chartW;
     const ms = frac * spanMs;
 
     // Tick line
@@ -913,8 +914,8 @@ function drawTimeAxis(ctx, spanMs, chartW, totalH) {
   // Separator line between labels and chart
   ctx.strokeStyle = '#3c3c3c';
   ctx.beginPath();
-  ctx.moveTo(TL_LABEL_W, 0);
-  ctx.lineTo(TL_LABEL_W, totalH);
+  ctx.moveTo(labelW, 0);
+  ctx.lineTo(labelW, totalH);
   ctx.stroke();
 }
 
