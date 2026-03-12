@@ -800,7 +800,7 @@ const TL_COLORS = {
 };
 
 function renderTimeline() {
-  const filtered = getFiltered();
+  let filtered = getFiltered();
   if (filtered.length === 0) {
     statsEl.textContent = '0 queries';
     const dpr = window.devicePixelRatio || 1;
