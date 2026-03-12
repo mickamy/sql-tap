@@ -151,6 +151,21 @@ func TestLoad_InvalidYAML(t *testing.T) {
 	}
 }
 
+func TestLoad_UnknownField(t *testing.T) {
+	t.Parallel()
+
+	content := `
+driver: postgres
+grcp: ":9999"
+`
+	path := writeTemp(t, content)
+
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected error for unknown field 'grcp'")
+	}
+}
+
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
