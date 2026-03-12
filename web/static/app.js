@@ -799,8 +799,10 @@ const TL_COLORS = {
   error: '#f44747',
 };
 
+const TL_QUERY_OPS = new Set(['Query', 'Exec', 'Execute']);
+
 function renderTimeline() {
-  let filtered = getFiltered();
+  let filtered = getFiltered().filter(({ev}) => TL_QUERY_OPS.has(ev.op));
   if (filtered.length === 0) {
     statsEl.textContent = '0 queries';
     const dpr = window.devicePixelRatio || 1;
