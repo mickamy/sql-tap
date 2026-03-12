@@ -67,19 +67,19 @@ func main() {
 
 	// CLI flags override config file values.
 	set := flagsSet(fs)
-	if set["driver"] {
+	if set["driver"] && *driver != "" {
 		cfg.Driver = *driver
 	}
-	if set["listen"] {
+	if set["listen"] && *listen != "" {
 		cfg.Listen = *listen
 	}
-	if set["upstream"] {
+	if set["upstream"] && *upstream != "" {
 		cfg.Upstream = *upstream
 	}
-	if set["grpc"] {
+	if set["grpc"] && *grpcAddr != "" {
 		cfg.GRPC = *grpcAddr
 	}
-	if set["dsn-env"] {
+	if set["dsn-env"] && *dsnEnv != "" {
 		cfg.DSNEnv = *dsnEnv
 	}
 	if set["http"] {
