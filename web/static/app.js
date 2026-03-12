@@ -803,11 +803,17 @@ function renderTimeline() {
   const filtered = getFiltered();
   if (filtered.length === 0) {
     statsEl.textContent = '0 queries';
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = timelineWrap.clientWidth;
+    const cssHeight = timelineWrap.clientHeight;
+    timelineCanvas.style.width = cssWidth + 'px';
+    timelineCanvas.style.height = cssHeight + 'px';
+    timelineCanvas.width = cssWidth * dpr;
+    timelineCanvas.height = cssHeight * dpr;
     const ctx = timelineCanvas.getContext('2d');
-    timelineCanvas.width = timelineWrap.clientWidth;
-    timelineCanvas.height = timelineWrap.clientHeight;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#1e1e1e';
-    ctx.fillRect(0, 0, timelineCanvas.width, timelineCanvas.height);
+    ctx.fillRect(0, 0, cssWidth, cssHeight);
     ctx.fillStyle = '#888';
     ctx.font = '13px monospace';
     ctx.fillText('No events to display', 20, 40);
