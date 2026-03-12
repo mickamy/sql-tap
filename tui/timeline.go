@@ -25,6 +25,7 @@ func (m Model) timelineEvents() []int {
 		switch proxy.Op(ev.GetOp()) {
 		case proxy.OpQuery, proxy.OpExec, proxy.OpExecute:
 			indices = append(indices, i)
+		case proxy.OpPrepare, proxy.OpBind, proxy.OpBegin, proxy.OpCommit, proxy.OpRollback:
 		}
 	}
 	return indices
@@ -201,10 +202,7 @@ func (m Model) renderTimeline() string {
 }
 
 func renderTimeAxis(spanMs float64, chartWidth, labelWidth int) string {
-	tickCount := min(chartWidth/12, 6)
-	if tickCount < 2 {
-		tickCount = 2
-	}
+	tickCount := max(min(chartWidth/12, 6), 2)
 
 	line := make([]rune, chartWidth)
 	for i := range line {
