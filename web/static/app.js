@@ -959,3 +959,5 @@ function connectSSE() {
 }
 
 connectSSE();
+
+window.addEventListener('resize', () => render());
