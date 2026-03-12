@@ -26,6 +26,7 @@ const (
 	viewInspect
 	viewExplain
 	viewAnalytics
+	viewTimeline
 )
 
 type sortMode int
@@ -94,6 +95,8 @@ type Model struct {
 	analyticsCursor   int
 	analyticsHScroll  int
 	analyticsSortMode analyticsSortMode
+
+	timelineScroll int
 }
 
 // eventMsg carries a received QueryEvent from the gRPC stream.
@@ -262,6 +265,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateExplain(msg)
 		case viewAnalytics:
 			return m.updateAnalytics(msg)
+		case viewTimeline:
+			return m.updateTimeline(msg)
 		case viewList:
 			return m.updateList(msg)
 		}
@@ -296,6 +301,8 @@ func (m Model) View() string {
 		view = m.renderExplain()
 	case viewAnalytics:
 		view = m.renderAnalytics()
+	case viewTimeline:
+		view = m.renderTimeline()
 	case viewList:
 		var footer string
 		switch {
@@ -308,7 +315,7 @@ func (m Model) View() string {
 		default:
 			items := []string{
 				"q: quit", "j/k: navigate", "space: toggle tx",
-				"enter: inspect", "a: analytics",
+				"enter: inspect", "a: analytics", "t: timeline",
 				"c/C: copy", "x/X: explain",
 				"e/E: edit+explain", "/: search", "f: filter", "s: sort",
 				"w: write", "p: pause", "ctrl+l: clear",
@@ -587,6 +594,10 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "a":
 		return m.enterAnalytics(), nil
+	case "t":
+		m.view = viewTimeline
+		m.timelineScroll = 0
+		return m, nil
 	case "esc":
 		return m.clearFilter(), nil
 	case " ":
