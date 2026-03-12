@@ -183,6 +183,7 @@ Open `http://localhost:8080` in your browser to view queries in real-time. The w
 - Text filter
 - Copy query (with or without bound args)
 - N+1 detection (toast + row highlight)
+- Timeline view (Gantt-chart style query visualization)
 
 ### sql-tap
 
@@ -251,6 +252,7 @@ Exit: 1 (2 problems found)
 | `e`               | Edit query, then EXPLAIN               |
 | `E`               | Edit query, then EXPLAIN ANALYZE       |
 | `a`               | Analytics view                         |
+| `t`               | Timeline view                          |
 | `c`               | Copy query                             |
 | `C`               | Copy query with bound args             |
 | `w`               | Export queries to file (JSON/Markdown) |
@@ -282,6 +284,16 @@ Exit: 1 (2 problems found)
 | `s`       | Cycle sort (total/count/avg) |
 | `c`       | Copy query                   |
 | `q`       | Back to list                 |
+
+### Timeline view
+
+| Key               | Action         |
+|-------------------|----------------|
+| `j` / `↓`         | Scroll down    |
+| `k` / `↑`         | Scroll up      |
+| `Ctrl+d` / `PgDn` | Half-page down |
+| `Ctrl+u` / `PgUp` | Half-page up   |
+| `q`               | Back to list   |
 
 ### Explain view
 
