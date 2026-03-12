@@ -202,7 +202,8 @@ Flags:
 
 ### CI mode
 
-Run `sql-tap -ci` to detect N+1 and slow queries in your test suite. It connects to a running sql-tapd (see [Quick start](#quick-start) for setup), collects events, and exits with code 1 if any problems are found.
+Run `sql-tap -ci` to detect N+1 and slow queries in your test suite. It connects to a running sql-tapd (
+see [Quick start](#quick-start) for setup), collects events, and exits with code 1 if any problems are found.
 
 ```bash
 # Start sql-tap in CI mode (background)
@@ -309,7 +310,8 @@ Exit: 1 (2 problems found)
 
 ## Filter syntax
 
-Press `f` in the list view to enter filter mode. Filters support structured conditions that go beyond simple text search.
+Press `f` in the list view to enter filter mode. Filters support structured conditions that go beyond simple text
+search.
 
 | Syntax      | Meaning                 | Example                               |
 |-------------|-------------------------|---------------------------------------|
@@ -328,11 +330,13 @@ op:select d>100ms
 
 This shows only SELECT queries that took longer than 100ms.
 
-Both `/` (text search) and `f` (filter) can be active simultaneously — the filter is applied first, then the text search narrows the results further.
+Both `/` (text search) and `f` (filter) can be active simultaneously — the filter is applied first, then the text search
+narrows the results further.
 
 ## N+1 query detection
 
-sql-tap automatically detects N+1 query patterns — when the same SELECT template is executed many times in a short time window.
+sql-tap automatically detects N+1 query patterns — when the same SELECT template is executed many times in a short time
+window.
 
 Detection is enabled by default and runs server-side, so both TUI and Web UI benefit:
 
@@ -341,15 +345,17 @@ Detection is enabled by default and runs server-side, so both TUI and Web UI ben
 
 ### Configuration
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--nplus1-threshold` | `5` | Number of executions to trigger detection (0 to disable) |
-| `--nplus1-window` | `1s` | Sliding time window for counting |
-| `--nplus1-cooldown` | `10s` | Minimum interval between alert notifications for the same query |
+| Flag                 | Default | Description                                                     |
+|----------------------|---------|-----------------------------------------------------------------|
+| `--nplus1-threshold` | `5`     | Number of executions to trigger detection (0 to disable)        |
+| `--nplus1-window`    | `1s`    | Sliding time window for counting                                |
+| `--nplus1-cooldown`  | `10s`   | Minimum interval between alert notifications for the same query |
 
-Only SELECT queries are monitored. INSERT, UPDATE, DELETE, and transaction lifecycle commands (BEGIN, COMMIT, etc.) are excluded.
+Only SELECT queries are monitored. INSERT, UPDATE, DELETE, and transaction lifecycle commands (BEGIN, COMMIT, etc.) are
+excluded.
 
-Once the threshold is crossed, all subsequent executions of the same template within the window are flagged. The cooldown only affects the notification frequency — the Status column marker always appears.
+Once the threshold is crossed, all subsequent executions of the same template within the window are flagged. The
+cooldown only affects the notification frequency — the Status column marker always appears.
 
 To disable detection entirely:
 
@@ -361,9 +367,14 @@ sql-tapd --nplus1-threshold=0 ...
 
 ### Arrow key input in search / filter mode
 
-Due to a limitation in the terminal input parser used by [Bubble Tea](https://github.com/charmbracelet/bubbletea) v1, multi-byte escape sequences (such as arrow keys: ESC `[` A/B/C/D) can occasionally be split across OS-level `read()` calls. When this happens, the remaining bytes (`[A`, `[B`, `[C`, `[D`, `[F`, `[H`) would appear as garbage text in the input field.
+Due to a limitation in the terminal input parser used by [Bubble Tea](https://github.com/charmbracelet/bubbletea) v1,
+multi-byte escape sequences (such as arrow keys: ESC `[` A/B/C/D) can occasionally be split across OS-level `read()`
+calls. When this happens, the remaining bytes (`[A`, `[B`, `[C`, `[D`, `[F`, `[H`) would appear as garbage text in the
+input field.
 
-sql-tap includes a workaround that detects and discards these split sequences. As a side effect, the literal two-character strings `[A`, `[B`, `[C`, `[D`, `[F`, and `[H` cannot be typed in search or filter input. This is unlikely to affect real-world usage since these patterns rarely appear in SQL queries.
+sql-tap includes a workaround that detects and discards these split sequences. As a side effect, the literal
+two-character strings `[A`, `[B`, `[C`, `[D`, `[F`, and `[H` cannot be typed in search or filter input. This is unlikely
+to affect real-world usage since these patterns rarely appear in SQL queries.
 
 ## How it works
 
@@ -381,13 +392,15 @@ sql-tap includes a workaround that detects and discards these split sequences. A
                      └───────────────────────┘
 ```
 
-sql-tapd parses the database wire protocol (PostgreSQL, MySQL, or TiDB) to intercept queries transparently. It tracks prepared
+sql-tapd parses the database wire protocol (PostgreSQL, MySQL, or TiDB) to intercept queries transparently. It tracks
+prepared
 statements, parameter bindings, transactions, execution time, rows affected, and errors. Events are streamed to
 connected TUI clients via gRPC.
 
 ## See also
 
-- **[grpc-tap](https://github.com/mickamy/grpc-tap)** — Same concept for gRPC. Transparent HTTP/2 reverse proxy that captures every gRPC / gRPC-Web / Connect call with TUI + Web UI.
+- **[grpc-tap](https://github.com/mickamy/grpc-tap)** — Same concept for gRPC. Transparent HTTP/2 reverse proxy that
+  captures every gRPC / gRPC-Web / Connect call with TUI + Web UI.
 
 ## License
 
