@@ -16,8 +16,12 @@ import (
 const tlLabelWidth = 40
 
 func (m Model) timelineEvents() []int {
+	matched := matchingEventsFiltered(m.events, m.filterQuery, m.searchQuery)
 	var indices []int
 	for i, ev := range m.events {
+		if !matched[i] {
+			continue
+		}
 		switch proxy.Op(ev.GetOp()) {
 		case proxy.OpQuery, proxy.OpExec, proxy.OpExecute:
 			indices = append(indices, i)
