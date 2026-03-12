@@ -875,7 +875,7 @@ function renderTimeline() {
 }
 
 function drawTimeAxis(ctx, minT, spanMs, chartW, totalH) {
-  const tickCount = Math.min(Math.floor(chartW / 80), 10);
+  const tickCount = Math.max(Math.min(Math.floor(chartW / 80), 10), 1);
   ctx.fillStyle = '#555';
   ctx.strokeStyle = '#333';
   ctx.font = '10px monospace';
