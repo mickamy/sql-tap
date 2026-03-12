@@ -820,14 +820,16 @@ function renderTimeline() {
     return;
   }
 
-  const TL_MAX_ROWS = 1000;
+  const dpr = window.devicePixelRatio || 1;
+  const maxCanvasH = 32000;
+  const maxRows = Math.floor((maxCanvasH / dpr - TL_PAD_TOP - 8) / TL_ROW_H);
   const totalCount = filtered.length;
-  if (filtered.length > TL_MAX_ROWS) {
-    filtered = filtered.slice(-TL_MAX_ROWS);
+  if (filtered.length > maxRows) {
+    filtered = filtered.slice(-maxRows);
   }
 
   const pauseLabel = paused ? ' (paused)' : '';
-  const truncLabel = totalCount > TL_MAX_ROWS ? ` (showing last ${TL_MAX_ROWS})` : '';
+  const truncLabel = totalCount > maxRows ? ` (showing last ${filtered.length})` : '';
   statsEl.textContent = `${totalCount} queries${truncLabel}${pauseLabel}`;
 
   // Compute time range
@@ -841,7 +843,6 @@ function renderTimeline() {
   }
   const spanMs = Math.max(maxT - minT, 1);
 
-  const dpr = window.devicePixelRatio || 1;
   const wrapW = timelineWrap.clientWidth;
   const labelW = Math.min(TL_LABEL_W, Math.max(Math.floor(wrapW * 0.35), 80));
   const chartW = Math.max(wrapW - labelW, 1);
