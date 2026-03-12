@@ -128,6 +128,7 @@ Usage:
   sql-tapd [flags]
 
 Flags:
+  -config    path to config file (default: .sql-tap.yaml if exists)
   -driver    database driver: postgres, mysql, tidb (required)
   -listen    client listen address (required)
   -upstream  upstream database address (required)
@@ -137,11 +138,33 @@ Flags:
   -nplus1-threshold  N+1 detection threshold (default: 5, 0 to disable)
   -nplus1-window     N+1 detection time window (default: 1s)
   -nplus1-cooldown   N+1 alert cooldown per query template (default: 10s)
+  -slow-threshold    slow query threshold (default: 100ms, 0 to disable)
   -version   show version and exit
 ```
 
 Set `DATABASE_URL` (or the env var specified by `-dsn-env`) to enable EXPLAIN support. Without it, the proxy still
 captures queries but EXPLAIN is disabled.
+
+### Config file
+
+Instead of passing flags on every invocation, you can create a `.sql-tap.yaml` in your project directory:
+
+```yaml
+driver: postgres
+listen: ":5433"
+upstream: "localhost:5432"
+grpc: ":9091"
+http: ":8080"
+dsn_env: DATABASE_URL
+slow_threshold: 100ms
+nplus1:
+  threshold: 5
+  window: 1s
+  cooldown: 10s
+```
+
+sql-tapd automatically loads `.sql-tap.yaml` from the current directory. Use `-config` to specify a different path.
+CLI flags override config file values.
 
 ### Web UI
 

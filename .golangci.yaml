@@ -25,6 +25,7 @@ linters:
       case:
         rules:
           json: snake
+          yaml: snake
   disable:
     - cyclop           # Redundant; cognitive complexity is already tracked by gocognit
     - depguard         # Import restrictions are not currently required for this internal architecture
