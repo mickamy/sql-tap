@@ -820,8 +820,15 @@ function renderTimeline() {
     return;
   }
 
+  const TL_MAX_ROWS = 1000;
+  const totalCount = filtered.length;
+  if (filtered.length > TL_MAX_ROWS) {
+    filtered = filtered.slice(-TL_MAX_ROWS);
+  }
+
   const pauseLabel = paused ? ' (paused)' : '';
-  statsEl.textContent = `${filtered.length} queries${pauseLabel}`;
+  const truncLabel = totalCount > TL_MAX_ROWS ? ` (showing last ${TL_MAX_ROWS})` : '';
+  statsEl.textContent = `${totalCount} queries${truncLabel}${pauseLabel}`;
 
   // Compute time range
   let minT = Infinity;
