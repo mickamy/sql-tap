@@ -16,6 +16,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/mickamy/sql-tap/broker"
+	"github.com/mickamy/sql-tap/config"
 	"github.com/mickamy/sql-tap/detect"
 	"github.com/mickamy/sql-tap/dsn"
 	"github.com/mickamy/sql-tap/explain"
@@ -32,11 +33,14 @@ var version = "dev"
 func main() {
 	fs := flag.NewFlagSet("sql-tapd", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "sql-tapd — SQL proxy daemon for sql-tap\n\nUsage:\n  sql-tapd [flags]\n\nFlags:\n")
+		fmt.Fprintf(os.Stderr,
+			"sql-tapd — SQL proxy daemon for sql-tap\n\nUsage:\n  sql-tapd [flags]\n\nFlags:\n")
 		fs.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nEnvironment:\n  DATABASE_URL    DSN for EXPLAIN queries (read by default via -dsn-env)\n")
+		fmt.Fprintf(os.Stderr,
+			"\nEnvironment:\n  DATABASE_URL    DSN for EXPLAIN queries (read by default via -dsn-env)\n")
 	}
 
+	configPath := fs.String("config", "", "path to config file (default: .sql-tap.yaml)")
 	driver := fs.String("driver", "", "database driver: postgres, mysql, tidb (required)")
 	listen := fs.String("listen", "", "client listen address (required)")
 	upstream := fs.String("upstream", "", "upstream database address (required)")
@@ -56,24 +60,62 @@ func main() {
 		return
 	}
 
-	if *driver == "" || *listen == "" || *upstream == "" {
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// CLI flags override config file values.
+	set := flagsSet(fs)
+	if set["driver"] {
+		cfg.Driver = *driver
+	}
+	if set["listen"] {
+		cfg.Listen = *listen
+	}
+	if set["upstream"] {
+		cfg.Upstream = *upstream
+	}
+	if set["grpc"] {
+		cfg.GRPC = *grpcAddr
+	}
+	if set["dsn-env"] {
+		cfg.DSNEnv = *dsnEnv
+	}
+	if set["http"] {
+		cfg.HTTP = *httpAddr
+	}
+	if set["nplus1-threshold"] {
+		cfg.NPlus1.Threshold = *nplus1Threshold
+	}
+	if set["nplus1-window"] {
+		cfg.NPlus1.Window = *nplus1Window
+	}
+	if set["nplus1-cooldown"] {
+		cfg.NPlus1.Cooldown = *nplus1Cooldown
+	}
+	if set["slow-threshold"] {
+		cfg.SlowThreshold = *slowThreshold
+	}
+
+	if cfg.Driver == "" || cfg.Listen == "" || cfg.Upstream == "" {
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	err := run(
-		*driver, *listen, *upstream, *grpcAddr, *dsnEnv, *httpAddr,
-		*nplus1Threshold, *nplus1Window, *nplus1Cooldown, *slowThreshold,
-	)
-	if err != nil {
+	if err := run(cfg); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(
-	driver, listen, upstream, grpcAddr, dsnEnv, httpAddr string,
-	nplus1Threshold int, nplus1Window, nplus1Cooldown, slowThreshold time.Duration,
-) error {
+// flagsSet returns the set of flag names explicitly passed on the command line.
+func flagsSet(fs *flag.FlagSet) map[string]bool {
+	m := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) { m[f.Name] = true })
+	return m
+}
+
+func run(cfg config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -82,13 +124,13 @@ func run(
 
 	// EXPLAIN client (optional)
 	var explainClient *explain.Client
-	if raw := os.Getenv(dsnEnv); raw != "" {
+	if raw := os.Getenv(cfg.DSNEnv); raw != "" {
 		db, err := dsn.Open(raw)
 		if err != nil {
 			return fmt.Errorf("open db for explain: %w", err)
 		}
 		var explainDriver explain.Driver
-		switch driver {
+		switch cfg.Driver {
 		case "mysql":
 			explainDriver = explain.MySQL
 		case "tidb":
@@ -100,32 +142,32 @@ func run(
 		defer func() { _ = explainClient.Close() }()
 		log.Printf("EXPLAIN enabled")
 	} else {
-		log.Printf("EXPLAIN disabled (%s not set)", dsnEnv)
+		log.Printf("EXPLAIN disabled (%s not set)", cfg.DSNEnv)
 	}
 
 	// gRPC server
 	var lc net.ListenConfig
-	grpcLis, err := lc.Listen(ctx, "tcp", grpcAddr)
+	grpcLis, err := lc.Listen(ctx, "tcp", cfg.GRPC)
 	if err != nil {
-		return fmt.Errorf("listen grpc %s: %w", grpcAddr, err)
+		return fmt.Errorf("listen grpc %s: %w", cfg.GRPC, err)
 	}
 	srv := server.New(b, explainClient)
 	go func() {
-		log.Printf("gRPC server listening on %s", grpcAddr)
+		log.Printf("gRPC server listening on %s", cfg.GRPC)
 		if err := srv.Serve(grpcLis); err != nil {
 			log.Printf("grpc serve: %v", err)
 		}
 	}()
 
 	// HTTP server (optional)
-	if httpAddr != "" {
-		httpLis, err := lc.Listen(ctx, "tcp", httpAddr)
+	if cfg.HTTP != "" {
+		httpLis, err := lc.Listen(ctx, "tcp", cfg.HTTP)
 		if err != nil {
-			return fmt.Errorf("listen http %s: %w", httpAddr, err)
+			return fmt.Errorf("listen http %s: %w", cfg.HTTP, err)
 		}
 		webSrv := web.New(b, explainClient)
 		go func() {
-			log.Printf("HTTP server listening on %s", httpAddr)
+			log.Printf("HTTP server listening on %s", cfg.HTTP)
 			if err := webSrv.Serve(httpLis); err != nil {
 				log.Printf("http serve: %v", err)
 			}
@@ -139,25 +181,25 @@ func run(
 
 	// Proxy
 	var p proxy.Proxy
-	switch driver {
+	switch cfg.Driver {
 	case "postgres":
-		p = postgres.New(listen, upstream)
+		p = postgres.New(cfg.Listen, cfg.Upstream)
 	case "mysql", "tidb":
-		p = mysql.New(listen, upstream)
+		p = mysql.New(cfg.Listen, cfg.Upstream)
 	default:
-		return fmt.Errorf("unsupported driver: %s", driver)
+		return fmt.Errorf("unsupported driver: %s", cfg.Driver)
 	}
 
 	// N+1 detector (optional)
 	var det *detect.Detector
-	if nplus1Threshold > 0 {
-		det = detect.New(nplus1Threshold, nplus1Window, nplus1Cooldown)
+	if cfg.NPlus1.Threshold > 0 {
+		det = detect.New(cfg.NPlus1.Threshold, cfg.NPlus1.Window, cfg.NPlus1.Cooldown)
 		log.Printf("N+1 detection enabled (threshold=%d, window=%s, cooldown=%s)",
-			nplus1Threshold, nplus1Window, nplus1Cooldown)
+			cfg.NPlus1.Threshold, cfg.NPlus1.Window, cfg.NPlus1.Cooldown)
 	}
 
-	if slowThreshold > 0 {
-		log.Printf("slow query detection enabled (threshold=%s)", slowThreshold)
+	if cfg.SlowThreshold > 0 {
+		log.Printf("slow query detection enabled (threshold=%s)", cfg.SlowThreshold)
 	}
 
 	go func() {
@@ -170,17 +212,17 @@ func run(
 				ev.NPlus1 = r.Matched
 				if r.Alert != nil {
 					log.Printf("N+1 detected: %q (%d times in %s)",
-						r.Alert.Query, r.Alert.Count, nplus1Window)
+						r.Alert.Query, r.Alert.Count, cfg.NPlus1.Window)
 				}
 			}
-			if slowThreshold > 0 && ev.Duration >= slowThreshold {
+			if cfg.SlowThreshold > 0 && ev.Duration >= cfg.SlowThreshold {
 				ev.SlowQuery = true
 			}
 			b.Publish(ev)
 		}
 	}()
 
-	log.Printf("proxying %s -> %s (driver=%s)", listen, upstream, driver)
+	log.Printf("proxying %s -> %s (driver=%s)", cfg.Listen, cfg.Upstream, cfg.Driver)
 	if err := p.ListenAndServe(ctx); err != nil {
 		return fmt.Errorf("proxy: %w", err)
 	}
@@ -189,11 +231,11 @@ func run(
 	return nil
 }
 
-func isSelectQuery(op proxy.Op, query string) bool {
+func isSelectQuery(op proxy.Op, q string) bool {
 	switch op {
 	case proxy.OpQuery, proxy.OpExec, proxy.OpExecute:
-		q := strings.TrimSpace(query)
-		return len(q) >= 6 && strings.EqualFold(q[:6], "SELECT")
+		trimmed := strings.TrimSpace(q)
+		return len(trimmed) >= 6 && strings.EqualFold(trimmed[:6], "SELECT")
 	case proxy.OpPrepare, proxy.OpBind, proxy.OpBegin, proxy.OpCommit, proxy.OpRollback:
 		return false
 	}
