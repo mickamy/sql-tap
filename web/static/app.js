@@ -846,7 +846,7 @@ function renderTimeline() {
   ctx.fillRect(0, 0, wrapW, totalH);
 
   // Time axis
-  drawTimeAxis(ctx, minT, spanMs, chartW, totalH);
+  drawTimeAxis(ctx, spanMs, chartW, totalH);
 
   // Bars
   ctx.font = '11px monospace';
@@ -874,7 +874,7 @@ function renderTimeline() {
   }
 }
 
-function drawTimeAxis(ctx, minT, spanMs, chartW, totalH) {
+function drawTimeAxis(ctx, spanMs, chartW, totalH) {
   const tickCount = Math.max(Math.min(Math.floor(chartW / 80), 10), 1);
   ctx.fillStyle = '#555';
   ctx.strokeStyle = '#333';
