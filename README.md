@@ -170,10 +170,42 @@ Usage:
   sql-tap [flags] <addr>
 
 Flags:
+  -ci       run in CI mode: collect events until SIGTERM/SIGINT or stream ends, then report and exit
   -version  Show version and exit
 ```
 
 `<addr>` is the gRPC address of sql-tapd (e.g. `localhost:9091`).
+
+### CI mode
+
+Run `sql-tap -ci` to detect N+1 and slow queries in your test suite. It connects to a running sql-tapd (see [Quick start](#quick-start) for setup), collects events, and exits with code 1 if any problems are found.
+
+```bash
+# Start sql-tap in CI mode (background)
+sql-tap -ci localhost:9091 &
+CI_PID=$!
+
+# Run your tests through the proxy
+DATABASE_URL="postgres://user:pass@localhost:5433/db?sslmode=disable" go test ./...
+
+# Stop sql-tap — prints report and exits 0 (clean) or 1 (problems found)
+kill "$CI_PID" 2>/dev/null || true
+wait "$CI_PID" 2>/dev/null || true
+```
+
+Example output:
+
+```
+sql-tap CI Report
+=================
+Captured: 142 queries
+
+Problems found:
+  [N+1]  SELECT * FROM comments WHERE post_id = $1  (detected 12 times)
+  [SLOW] SELECT * FROM users JOIN ...  (avg 523ms, 3 occurrences)
+
+Exit: 1 (2 problems found)
+```
 
 ## Keybindings
 
