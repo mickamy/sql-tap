@@ -830,7 +830,7 @@ function renderTimeline() {
 
   const dpr = window.devicePixelRatio || 1;
   const wrapW = timelineWrap.clientWidth;
-  const chartW = wrapW - TL_LABEL_W;
+  const chartW = Math.max(wrapW - TL_LABEL_W, 1);
   const totalH = TL_PAD_TOP + filtered.length * TL_ROW_H + 8;
 
   timelineCanvas.style.width = wrapW + 'px';
