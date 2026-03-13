@@ -846,7 +846,7 @@ function renderTimeline() {
   const spanMs = Math.max(maxT - minT, 1);
 
   const wrapW = timelineWrap.clientWidth;
-  const labelW = Math.min(TL_LABEL_W, Math.max(Math.floor(wrapW * 0.35), 80));
+  const labelW = Math.min(TL_LABEL_W, Math.max(Math.floor(wrapW * 0.35), 80), wrapW - 20);
   const chartW = Math.max(wrapW - labelW, 1);
   const totalH = TL_PAD_TOP + filtered.length * TL_ROW_H + 8;
 
