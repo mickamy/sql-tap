@@ -931,7 +931,9 @@ function barColor(ev) {
 
 function truncateQuery(s, maxLen) {
   if (!s) return '-';
+  if (maxLen <= 0) return '';
   if (s.length <= maxLen) return s;
+  if (maxLen <= 3) return s.slice(0, maxLen);
   return s.slice(0, maxLen - 3) + '...';
 }
 
