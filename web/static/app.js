@@ -107,6 +107,8 @@ function highlightSQL(sql) {
 const tbody = document.getElementById('tbody');
 const tableWrap = document.getElementById('table-wrap');
 const statsWrap = document.getElementById('stats-wrap');
+const timelineWrap = document.getElementById('timeline-wrap');
+const timelineCanvas = document.getElementById('timeline-canvas');
 const statsTbody = document.getElementById('stats-tbody');
 const statsEl = document.getElementById('stats');
 const statusEl = document.getElementById('status');
@@ -145,14 +147,16 @@ function switchView(mode) {
   viewMode = mode;
   document.getElementById('tab-events').classList.toggle('active', mode === 'events');
   document.getElementById('tab-stats').classList.toggle('active', mode === 'stats');
+  document.getElementById('tab-timeline').classList.toggle('active', mode === 'timeline');
   tableWrap.style.display = mode === 'events' ? '' : 'none';
   statsWrap.style.display = mode === 'stats' ? '' : 'none';
+  timelineWrap.style.display = mode === 'timeline' ? '' : 'none';
   if (mode === 'events') {
     detailEl.className = selectedIdx >= 0 ? 'open' : '';
     statsDetailEl.className = '';
   } else {
     detailEl.className = '';
-    statsDetailEl.className = selectedStatsQuery ? 'open' : '';
+    statsDetailEl.className = mode === 'stats' && selectedStatsQuery ? 'open' : '';
   }
   render();
 }
@@ -165,8 +169,10 @@ function render() {
     renderPending = false;
     if (viewMode === 'events') {
       renderTable();
-    } else {
+    } else if (viewMode === 'stats') {
       renderStats();
+    } else if (viewMode === 'timeline') {
+      renderTimeline();
     }
   });
 }
@@ -780,6 +786,157 @@ function downloadBlob(content, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+// --- Timeline view ---
+
+const TL_ROW_H = 24;
+const TL_LABEL_W = 360;
+const TL_PAD_TOP = 32;
+const TL_BAR_H = 16;
+const TL_COLORS = {
+  normal: '#569cd6',
+  slow: '#c678dd',
+  nplus1: '#e5c07b',
+  error: '#f44747',
+};
+
+const TL_QUERY_OPS = new Set(['Query', 'Exec', 'Execute']);
+
+function renderTimeline() {
+  let filtered = getFiltered().filter(({ev}) => TL_QUERY_OPS.has(ev.op));
+  if (filtered.length === 0) {
+    statsEl.textContent = '0 queries';
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = timelineWrap.clientWidth;
+    const cssHeight = timelineWrap.clientHeight;
+    timelineCanvas.style.width = cssWidth + 'px';
+    timelineCanvas.style.height = cssHeight + 'px';
+    timelineCanvas.width = cssWidth * dpr;
+    timelineCanvas.height = cssHeight * dpr;
+    const ctx = timelineCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#1e1e1e';
+    ctx.fillRect(0, 0, cssWidth, cssHeight);
+    ctx.fillStyle = '#888';
+    ctx.font = '13px monospace';
+    ctx.fillText('No events to display', 20, 40);
+    return;
+  }
+
+  const dpr = window.devicePixelRatio || 1;
+  const maxCanvasH = 32000;
+  const maxRows = Math.floor((maxCanvasH / dpr - TL_PAD_TOP - 8) / TL_ROW_H);
+  const totalCount = filtered.length;
+  if (filtered.length > maxRows) {
+    filtered = filtered.slice(-maxRows);
+  }
+
+  const pauseLabel = paused ? ' (paused)' : '';
+  const truncLabel = totalCount > maxRows ? ` (showing last ${filtered.length})` : '';
+  statsEl.textContent = `${totalCount} queries${truncLabel}${pauseLabel}`;
+
+  // Compute time range
+  let minT = Infinity;
+  let maxT = -Infinity;
+  for (const {ev} of filtered) {
+    const t0 = new Date(ev.start_time).getTime();
+    const t1 = t0 + ev.duration_ms;
+    if (t0 < minT) minT = t0;
+    if (t1 > maxT) maxT = t1;
+  }
+  const spanMs = Math.max(maxT - minT, 1);
+
+  const wrapW = timelineWrap.clientWidth;
+  const labelW = Math.max(Math.min(TL_LABEL_W, Math.max(Math.floor(wrapW * 0.35), 80), wrapW - 20), 0);
+  const chartW = Math.max(wrapW - labelW, 1);
+  const totalH = TL_PAD_TOP + filtered.length * TL_ROW_H + 8;
+
+  timelineCanvas.style.width = wrapW + 'px';
+  timelineCanvas.style.height = totalH + 'px';
+  timelineCanvas.width = wrapW * dpr;
+  timelineCanvas.height = totalH * dpr;
+
+  const ctx = timelineCanvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  // Background
+  ctx.fillStyle = '#1e1e1e';
+  ctx.fillRect(0, 0, wrapW, totalH);
+
+  // Time axis
+  drawTimeAxis(ctx, spanMs, chartW, totalH, labelW);
+
+  // Bars
+  ctx.font = '11px monospace';
+  for (let i = 0; i < filtered.length; i++) {
+    const {ev} = filtered[i];
+    const y = TL_PAD_TOP + i * TL_ROW_H;
+    const t0 = new Date(ev.start_time).getTime();
+
+    // Label (truncated query)
+    ctx.fillStyle = '#888';
+    const label = truncateQuery(ev.query || ev.op, Math.floor(labelW / 7.8));
+    ctx.fillText(label, 8, y + TL_BAR_H - 3);
+
+    // Bar
+    const x = labelW + ((t0 - minT) / spanMs) * chartW;
+    const w = Math.max((ev.duration_ms / spanMs) * chartW, 2);
+    ctx.fillStyle = barColor(ev);
+    ctx.fillRect(x, y + 2, w, TL_BAR_H - 4);
+
+    // Duration text (if bar is wide enough)
+    if (w > 40) {
+      ctx.fillStyle = '#1e1e1e';
+      ctx.fillText(fmtDur(ev.duration_ms), x + 4, y + TL_BAR_H - 4);
+    }
+  }
+}
+
+function drawTimeAxis(ctx, spanMs, chartW, totalH, labelW) {
+  const tickCount = Math.max(Math.min(Math.floor(chartW / 80), 10), 1);
+  ctx.fillStyle = '#555';
+  ctx.strokeStyle = '#333';
+  ctx.font = '10px monospace';
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i <= tickCount; i++) {
+    const frac = i / tickCount;
+    const x = labelW + frac * chartW;
+    const ms = frac * spanMs;
+
+    // Tick line
+    ctx.beginPath();
+    ctx.moveTo(x, TL_PAD_TOP - 4);
+    ctx.lineTo(x, totalH);
+    ctx.stroke();
+
+    // Label
+    const label = fmtDur(ms);
+    ctx.fillText(label, x + 2, TL_PAD_TOP - 8);
+  }
+
+  // Separator line between labels and chart
+  ctx.strokeStyle = '#3c3c3c';
+  ctx.beginPath();
+  ctx.moveTo(labelW, 0);
+  ctx.lineTo(labelW, totalH);
+  ctx.stroke();
+}
+
+function barColor(ev) {
+  if (ev.error) return TL_COLORS.error;
+  if (ev.n_plus_1) return TL_COLORS.nplus1;
+  if (ev.slow_query) return TL_COLORS.slow;
+  return TL_COLORS.normal;
+}
+
+function truncateQuery(s, maxLen) {
+  if (!s) return '-';
+  if (maxLen <= 0) return '';
+  if (s.length <= maxLen) return s;
+  if (maxLen <= 3) return s.slice(0, maxLen);
+  return s.slice(0, maxLen - 3) + '...';
+}
+
 // SSE
 function connectSSE() {
   const es = new EventSource('/api/events');
@@ -807,3 +964,5 @@ function connectSSE() {
 }
 
 connectSSE();
+
+window.addEventListener('resize', () => render());

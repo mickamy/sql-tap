@@ -221,6 +221,18 @@ tr.row.has-error .col-query span,
 tr.row.n-plus-1 .col-query span,
 tr.row.slow-query .col-query span { color: inherit; }
 
+/* Timeline view */
+#timeline-wrap {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  background: #1e1e1e;
+}
+
+#timeline-canvas {
+  display: block;
+}
+
 #toast {
   position: fixed;
   top: -40px;
