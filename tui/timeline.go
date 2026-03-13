@@ -52,6 +52,7 @@ func (m Model) updateTimeline(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	indices := m.timelineEvents()
 	dataRows := max(m.timelineVisibleRows()-2, 1)
 	maxScroll := max(len(indices)-dataRows, 0)
+	m.timelineScroll = min(m.timelineScroll, maxScroll)
 
 	switch msg.String() {
 	case "ctrl+c":
