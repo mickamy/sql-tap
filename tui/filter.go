@@ -16,6 +16,8 @@ const (
 	filterDuration                   // d>100ms, d<10ms
 	filterError                      // "error" keyword
 	filterOp                         // op:select, op:begin, etc.
+	filterNPlus1                     // "n+1" or "nplus1" keyword
+	filterSlow                       // "slow" keyword
 )
 
 type durationOp int
@@ -70,18 +72,27 @@ func parseFilter(input string) []filterCondition {
 			conds = append(conds, c)
 			continue
 		}
-		if strings.ToLower(tok) == "error" {
+		lower := strings.ToLower(tok)
+		if lower == "error" {
 			conds = append(conds, filterCondition{kind: filterError})
 			continue
 		}
-		if c, ok := parseOp(tok); ok {
+		if lower == "n+1" || lower == "nplus1" {
+			conds = append(conds, filterCondition{kind: filterNPlus1})
+			continue
+		}
+		if lower == "slow" {
+			conds = append(conds, filterCondition{kind: filterSlow})
+			continue
+		}
+		if c, ok := parseOp(lower); ok {
 			conds = append(conds, c)
 			continue
 		}
 		// Fallback: plain text match.
 		conds = append(conds, filterCondition{
 			kind: filterText,
-			text: strings.ToLower(tok),
+			text: lower,
 		})
 	}
 	return conds
@@ -124,8 +135,7 @@ func unitSuffix(unit string) string {
 	return "ms"
 }
 
-func parseOp(tok string) (filterCondition, bool) {
-	lower := strings.ToLower(tok)
+func parseOp(lower string) (filterCondition, bool) {
 	if !strings.HasPrefix(lower, "op:") {
 		return filterCondition{}, false
 	}
@@ -157,6 +167,10 @@ func (c filterCondition) matchesEvent(ev *tapv1.QueryEvent) bool {
 		}
 	case filterError:
 		return ev.GetError() != ""
+	case filterNPlus1:
+		return ev.GetNPlus_1()
+	case filterSlow:
+		return ev.GetSlowQuery()
 	case filterOp:
 		return matchOp(ev, c.opPattern)
 	}
@@ -203,6 +217,10 @@ func describeFilter(input string) string {
 			parts = append(parts, "d"+op+c.durValue.String())
 		case filterError:
 			parts = append(parts, "error")
+		case filterNPlus1:
+			parts = append(parts, "n+1")
+		case filterSlow:
+			parts = append(parts, "slow")
 		case filterOp:
 			parts = append(parts, "op:"+c.opPattern)
 		}

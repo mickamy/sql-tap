@@ -317,6 +317,8 @@ search.
 | `d>100ms`   | Duration greater than   | `d>1s`, `d>500us`                     |
 | `d<10ms`    | Duration less than      | `d<50ms`                              |
 | `error`     | Events with errors only |                                       |
+| `n+1`       | N+1 flagged queries     |                                       |
+| `slow`      | Slow queries only       |                                       |
 | `op:select` | SQL keyword prefix      | `op:insert`, `op:update`, `op:delete` |
 | `op:begin`  | Protocol operation      | `op:commit`, `op:rollback`            |
 | _(other)_   | Text substring match    | `users`, `WHERE id`                   |
@@ -351,7 +353,9 @@ Detection is enabled by default and runs server-side, so both TUI and Web UI ben
 | `--nplus1-cooldown`  | `10s`   | Minimum interval between alert notifications for the same query |
 
 Only SELECT queries are monitored. INSERT, UPDATE, DELETE, and transaction lifecycle commands (BEGIN, COMMIT, etc.) are
-excluded.
+excluded. Metadata queries — SELECT statements without a FROM clause, such as `SELECT database()`, `SELECT @@version`,
+or `SELECT 1` — are also excluded, as they are typically driver health checks or system introspection calls rather than
+application data queries.
 
 Once the threshold is crossed, all subsequent executions of the same template within the window are flagged. The
 cooldown only affects the notification frequency — the Status column marker always appears.

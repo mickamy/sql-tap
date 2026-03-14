@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -235,9 +236,24 @@ func isSelectQuery(op proxy.Op, q string) bool {
 	switch op {
 	case proxy.OpQuery, proxy.OpExec, proxy.OpExecute:
 		trimmed := strings.TrimSpace(q)
-		return len(trimmed) >= 6 && strings.EqualFold(trimmed[:6], "SELECT")
+		if len(trimmed) < 6 || !strings.EqualFold(trimmed[:6], "SELECT") {
+			return false
+		}
+		return !isMetadataQuery(trimmed)
 	case proxy.OpPrepare, proxy.OpBind, proxy.OpBegin, proxy.OpCommit, proxy.OpRollback:
 		return false
 	}
 	return false
+}
+
+// reFromClause matches the SQL FROM keyword as a whole word, used to detect
+// whether a SELECT query references any table.
+var reFromClause = regexp.MustCompile(`(?i)\bFROM\b`)
+
+// isMetadataQuery reports whether q is a system/metadata SELECT that should be
+// excluded from N+1 detection. These are selects that do not reference any
+// table (i.e. have no FROM clause), such as SELECT database(), SELECT @@version,
+// or SELECT 1.
+func isMetadataQuery(q string) bool {
+	return !reFromClause.MatchString(q)
 }
