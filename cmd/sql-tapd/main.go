@@ -248,6 +248,10 @@ func isSelectQuery(op proxy.Op, q string) bool {
 
 // reFromClause matches the SQL FROM keyword as a whole word, used to detect
 // whether a SELECT query references any table.
+// NOTE: This is a simple keyword check; it cannot distinguish a FROM clause
+// from FROM inside expressions (e.g. EXTRACT(EPOCH FROM NOW()) in Postgres).
+// Such queries will not be classified as metadata, which is a safe default
+// (they stay in N+1 detection rather than being silently dropped).
 var reFromClause = regexp.MustCompile(`(?i)\bFROM\b`)
 
 // isMetadataQuery reports whether q is a system/metadata SELECT that should be

@@ -317,7 +317,7 @@ search.
 | `d>100ms`   | Duration greater than   | `d>1s`, `d>500us`                     |
 | `d<10ms`    | Duration less than      | `d<50ms`                              |
 | `error`     | Events with errors only |                                       |
-| `n+1`       | N+1 flagged queries     |                                       |
+| `n+1`       | N+1 flagged queries     | alias: `nplus1`                       |
 | `slow`      | Slow queries only       |                                       |
 | `op:select` | SQL keyword prefix      | `op:insert`, `op:update`, `op:delete` |
 | `op:begin`  | Protocol operation      | `op:commit`, `op:rollback`            |

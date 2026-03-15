@@ -115,6 +115,11 @@ func TestIsMetadataQuery(t *testing.T) {
 			q:    "SELECT (SELECT COUNT(*) FROM orders)",
 			want: false,
 		},
+		{
+			name: "expression-level FROM (Postgres EXTRACT)",
+			q:    "SELECT EXTRACT(EPOCH FROM NOW())",
+			want: false, // false negative: no table, but FROM in expression
+		},
 	}
 
 	for _, tt := range tests {
