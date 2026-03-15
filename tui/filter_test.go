@@ -80,6 +80,27 @@ func TestParseFilter(t *testing.T) {
 			},
 		},
 		{
+			name:  "n+1 keyword",
+			input: "n+1",
+			want: []filterCondition{
+				{kind: filterNPlus1},
+			},
+		},
+		{
+			name:  "nplus1 keyword",
+			input: "nplus1",
+			want: []filterCondition{
+				{kind: filterNPlus1},
+			},
+		},
+		{
+			name:  "slow keyword",
+			input: "slow",
+			want: []filterCondition{
+				{kind: filterSlow},
+			},
+		},
+		{
 			name:  "combined filter",
 			input: "op:select d>100ms",
 			want: []filterCondition{
@@ -227,6 +248,38 @@ func TestMatchesEvent(t *testing.T) {
 			ev:   makeEvent(proxy.OpQuery, "INSERT INTO users (name) VALUES ('alice')", 5*time.Millisecond, ""),
 			want: true,
 		},
+		{
+			name: "n+1 match",
+			cond: filterCondition{kind: filterNPlus1},
+			ev: func() *tapv1.QueryEvent {
+				ev := makeEvent(proxy.OpQuery, "SELECT id FROM users WHERE id = 1", 5*time.Millisecond, "")
+				ev.NPlus_1 = true
+				return ev
+			}(),
+			want: true,
+		},
+		{
+			name: "n+1 no match",
+			cond: filterCondition{kind: filterNPlus1},
+			ev:   makeEvent(proxy.OpQuery, "SELECT id FROM users WHERE id = 1", 5*time.Millisecond, ""),
+			want: false,
+		},
+		{
+			name: "slow match",
+			cond: filterCondition{kind: filterSlow},
+			ev: func() *tapv1.QueryEvent {
+				ev := makeEvent(proxy.OpQuery, "SELECT id FROM users", 500*time.Millisecond, "")
+				ev.SlowQuery = true
+				return ev
+			}(),
+			want: true,
+		},
+		{
+			name: "slow no match",
+			cond: filterCondition{kind: filterSlow},
+			ev:   makeEvent(proxy.OpQuery, "SELECT id FROM users", 5*time.Millisecond, ""),
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -355,6 +408,16 @@ func TestDescribeFilter(t *testing.T) {
 			name:  "error keyword",
 			input: "error",
 			want:  "error",
+		},
+		{
+			name:  "n+1 keyword",
+			input: "n+1",
+			want:  "n+1",
+		},
+		{
+			name:  "slow keyword",
+			input: "slow",
+			want:  "slow",
 		},
 		{
 			name:  "text fallback",

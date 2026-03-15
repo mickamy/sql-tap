@@ -202,6 +202,8 @@ function parseFilterTokens(input) {
       return {kind: 'duration', op, ms};
     }
     if (tok.toLowerCase() === 'error') return {kind: 'error'};
+    if (tok.toLowerCase() === 'n+1' || tok.toLowerCase() === 'nplus1') return {kind: 'nplus1'};
+    if (tok.toLowerCase() === 'slow') return {kind: 'slow'};
     const lower = tok.toLowerCase();
     if (lower.startsWith('op:') && lower.length > 3) return {kind: 'op', pattern: lower.slice(3)};
     return {kind: 'text', text: lower};
@@ -214,6 +216,10 @@ function matchesFilter(ev, cond) {
       return cond.op === '>' ? ev.duration_ms > cond.ms : ev.duration_ms < cond.ms;
     case 'error':
       return !!ev.error;
+    case 'nplus1':
+      return !!ev.n_plus_1;
+    case 'slow':
+      return !!ev.slow_query;
     case 'op':
       if (PROTOCOL_OPS.has(cond.pattern)) return ev.op.toLowerCase() === cond.pattern;
       if (OP_KEYWORDS.has(cond.pattern)) return (ev.query || '').trim().toLowerCase().startsWith(cond.pattern);
