@@ -342,3 +342,127 @@ func TestErrorCapture(t *testing.T) {
 		t.Error("expected non-empty error")
 	}
 }
+
+func TestComplexPasswordAuth(t *testing.T) {
+t.Parallel()
+complexPassword := `bbbH.A.|?ZAAAAi*RN)<*9(xxx`
+
+ctx := t.Context()
+ctr, err := mysql.Run(ctx, "mysql:8",
+mysql.WithDatabase(testDB),
+mysql.WithUsername(testUser),
+mysql.WithPassword(complexPassword),
+)
+if err != nil {
+t.Fatalf("start mysql container: %v", err)
+}
+t.Cleanup(func() {
+if err := ctr.Terminate(context.Background()); err != nil {
+t.Logf("terminate mysql container: %v", err)
+}
+})
+
+host, err := ctr.Host(ctx)
+if err != nil {
+t.Fatalf("get host: %v", err)
+}
+port, err := ctr.MappedPort(ctx, "3306/tcp")
+if err != nil {
+t.Fatalf("get port: %v", err)
+}
+upstream := fmt.Sprintf("%s:%s", host, port.Port())
+_, proxyAddr := startProxy(t, upstream)
+
+// Connect through the proxy with the complex password.
+dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?timeout=10s", testUser, complexPassword, proxyAddr, testDB)
+db, err := sql.Open("mysql", dsn)
+if err != nil {
+t.Fatalf("open db: %v", err)
+}
+defer func() { _ = db.Close() }()
+
+if err := db.PingContext(ctx); err != nil {
+t.Fatalf("ping through proxy with complex password: %v", err)
+}
+
+var result int
+if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&result); err != nil {
+t.Fatalf("query through proxy with complex password: %v", err)
+}
+if result != 1 {
+t.Errorf("expected 1, got %d", result)
+}
+}
+
+func TestCachingSHA2PasswordFullAuth(t *testing.T) {
+t.Parallel()
+ctx := t.Context()
+
+// Start MySQL container with root user
+ctr, err := mysql.Run(ctx, "mysql:8",
+mysql.WithDatabase(testDB),
+mysql.WithUsername(testUser),
+mysql.WithPassword(testPassword),
+)
+if err != nil {
+t.Fatalf("start mysql container: %v", err)
+}
+t.Cleanup(func() {
+if err := ctr.Terminate(context.Background()); err != nil {
+t.Logf("terminate mysql container: %v", err)
+}
+})
+
+host, err := ctr.Host(ctx)
+if err != nil {
+t.Fatalf("get host: %v", err)
+}
+port, err := ctr.MappedPort(ctx, "3306/tcp")
+if err != nil {
+t.Fatalf("get port: %v", err)
+}
+upstream := fmt.Sprintf("%s:%s", host, port.Port())
+
+// Direct connection to inspect root's auth plugin and create a test user
+directDSN := fmt.Sprintf("%s:%s@tcp(%s)/%s?timeout=10s", testUser, testPassword, upstream, testDB)
+directDB, err := sql.Open("mysql", directDSN)
+if err != nil {
+t.Fatalf("open direct db: %v", err)
+}
+defer func() { _ = directDB.Close() }()
+
+// Check root user's auth plugin
+var rootPlugin string
+if err := directDB.QueryRowContext(ctx,
+"SELECT plugin FROM mysql.user WHERE user='root' LIMIT 1").Scan(&rootPlugin); err != nil {
+t.Fatalf("query auth plugin: %v", err)
+}
+t.Logf("Root user auth plugin: %s", rootPlugin)
+
+// Create a dedicated caching_sha2_password user with a complex password (never cached)
+complexPassword := `bbbH.A.|?ZAAAAi*RN)<*9(xxx`
+if _, err := directDB.ExecContext(ctx,
+"CREATE USER 'sha2user'@'%' IDENTIFIED WITH caching_sha2_password BY '"+complexPassword+"'"); err != nil {
+t.Fatalf("create sha2user: %v", err)
+}
+if _, err := directDB.ExecContext(ctx, "GRANT ALL ON "+testDB+".* TO 'sha2user'@'%'"); err != nil {
+t.Fatalf("grant sha2user: %v", err)
+}
+
+// Start proxy
+_, proxyAddr := startProxy(t, upstream)
+
+// Connect as sha2user through proxy - password is NOT in caching_sha2_password cache
+// This forces the full auth path (RSA key exchange)
+proxyCachingDSN := fmt.Sprintf("sha2user:%s@tcp(%s)/%s?timeout=10s", complexPassword, proxyAddr, testDB)
+proxyCachingDB, err := sql.Open("mysql", proxyCachingDSN)
+if err != nil {
+t.Fatalf("open caching_sha2_password db via proxy: %v", err)
+}
+defer func() { _ = proxyCachingDB.Close() }()
+
+if err := proxyCachingDB.PingContext(ctx); err != nil {
+t.Fatalf("ping through proxy (caching_sha2_password full auth): %v", err)
+}
+t.Logf("caching_sha2_password full auth through proxy: OK")
+}
