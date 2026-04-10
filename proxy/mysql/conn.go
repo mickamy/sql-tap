@@ -278,6 +278,12 @@ func (c *conn) relayStartup() error {
 		case iOK:
 			return nil
 		case iERR:
+			// Include the actual MySQL error message to help users diagnose the issue.
+			// ERR_Packet layout: 0xFF + error_code(2) + '#' + sqlstate(5) + error_message
+			payload := pkt[4:]
+			if len(payload) > 9 && payload[3] == '#' {
+				return fmt.Errorf("mysql: auth error from upstream: %s", payload[9:])
+			}
 			return errors.New("mysql: auth error from upstream")
 		case 0x01: // AuthMoreData
 			// caching_sha2_password fast auth success: server sends [0x01, 0x03],
