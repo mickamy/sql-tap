@@ -58,6 +58,11 @@ const (
 	iEOF byte = 0xFE
 )
 
+// errPacketMsgOffset is the byte offset within an ERR_Packet payload at which
+// the human-readable error message begins.
+// Layout: 0xFF (1) + error_code (2) + '#' (1) + sqlstate (5) = 9 bytes before message.
+const errPacketMsgOffset = 9
+
 // MySQL capability flags.
 const (
 	clientCompress            uint32 = 1 << 5
@@ -281,8 +286,8 @@ func (c *conn) relayStartup() error {
 			// Include the actual MySQL error message to help users diagnose the issue.
 			// ERR_Packet layout: 0xFF + error_code(2) + '#' + sqlstate(5) + error_message
 			payload := pkt[4:]
-			if len(payload) > 9 && payload[3] == '#' {
-				return fmt.Errorf("mysql: auth error from upstream: %s", payload[9:])
+			if len(payload) > errPacketMsgOffset && payload[3] == '#' {
+				return fmt.Errorf("mysql: auth error from upstream: %s", payload[errPacketMsgOffset:])
 			}
 			return errors.New("mysql: auth error from upstream")
 		case 0x01: // AuthMoreData

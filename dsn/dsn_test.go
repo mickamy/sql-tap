@@ -100,5 +100,3 @@ func TestMySQLURLToDriverDSN(t *testing.T) {
 		})
 	}
 }
-
-
